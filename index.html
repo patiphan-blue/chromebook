@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="text-stone-950">
+  <a class="skip-link" href="#mainContent">ข้ามไปยังเนื้อหาหลัก</a>
   <div class="min-h-screen school-canvas">
     <aside class="sidebar-shell fixed inset-y-4 left-4 z-40 hidden w-72 flex-col p-4 lg:flex">
       <div class="mb-8 flex items-center gap-3">
@@ -48,7 +49,19 @@
       </div>
     </header>
 
-    <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:ml-80 lg:py-8">
+    <main id="mainContent" class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:ml-80 lg:py-8">
+      <section class="hero-panel mb-6">
+        <div class="hero-copy">
+          <p class="eyebrow"><span></span> Chromebook Control Center</p>
+          <h2>ระบบยืม-คืน Chromebook</h2>
+          <p>ติดตามสถานะเครื่องของโรงเรียนปายวิทยาคาร แยกนักเรียน ครู เครื่องว่าง และรายการคืนแล้วในหน้าเดียว</p>
+        </div>
+        <div class="hero-actions">
+          <button class="btn-secondary" type="button" data-scroll-target="tableSection">ดูตารางติดตาม</button>
+          <button class="btn-primary" type="button" data-scroll-target="adminPanel">เครื่องมือแอดมิน</button>
+        </div>
+      </section>
+
       <section id="dashboardSection" class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <article class="metric-card">
           <span>เครื่องทั้งหมด</span>
@@ -137,34 +150,60 @@
           </div>
 
           <section id="assignPage" class="admin-page">
-            <div class="mb-4 flex flex-wrap gap-2">
-              <button class="assign-mode-btn active" data-assign-mode="class">ยืมรายห้อง</button>
-              <button class="assign-mode-btn" data-assign-mode="single">ยืมรายคน / ค้นรหัส</button>
+            <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p class="text-sm font-semibold theme-accent">Operations Workbench</p>
+                <h3 class="text-lg font-bold">จัดการยืมเครื่องแบบเร็ว</h3>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button class="assign-mode-btn active" data-assign-mode="class">ยืมรายห้อง</button>
+                <button class="assign-mode-btn" data-assign-mode="single">ยืมรายคน / ค้นรหัส</button>
+              </div>
             </div>
 
-            <section id="assignClassMode" class="space-y-4">
-              <div class="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_auto]">
-                <label>
-                  <span class="text-sm font-medium">เลือกห้องเรียน</span>
-                  <select id="assignClassSelect" class="input mt-1"></select>
-                </label>
-                <button id="loadClassStudentsBtn" class="btn-secondary self-end" type="button">ดึงรายชื่อ</button>
-                <button id="bulkAssignBtn" class="btn-primary self-end" type="button">บันทึกยืมที่เลือก</button>
+            <section id="assignClassMode" class="workbench-grid">
+              <div class="workbench-main">
+                <div class="toolbar-grid">
+                  <label>
+                    <span class="text-sm font-medium">เลือกห้องเรียน</span>
+                    <select id="assignClassSelect" class="input mt-1"></select>
+                  </label>
+                  <label>
+                    <span class="text-sm font-medium">ค้นหารหัสหรือชื่อ</span>
+                    <input id="assignStudentSearchInput" class="input mt-1" placeholder="เช่น 10001 หรือ กวิน">
+                  </label>
+                  <button id="loadClassStudentsBtn" class="btn-secondary self-end" type="button">ดึงรายชื่อ</button>
+                  <button id="bulkAssignBtn" class="btn-primary self-end" type="button">บันทึกยืมที่เลือก</button>
+                </div>
+                <div class="workbench-meta" id="assignClassMeta">เลือกห้องแล้วกดดึงรายชื่อ เพื่อเริ่มเลือกเลขเครื่องที่ยังว่าง</div>
+                <div class="table-scroll compact-table">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>ชั้น+ห้อง</th>
+                        <th>รหัสนักเรียน</th>
+                        <th>ชื่อ-สกุล</th>
+                        <th>สถานะ</th>
+                        <th>เลขเครื่องที่ว่าง</th>
+                      </tr>
+                    </thead>
+                    <tbody id="assignClassTable"></tbody>
+                  </table>
+                </div>
               </div>
-              <div class="overflow-x-auto">
-                <table class="table">
-                  <thead>
-                    <tr>
-                      <th>ชั้น+ห้อง</th>
-                      <th>รหัสนักเรียน</th>
-                      <th>ชื่อ-สกุล</th>
-                      <th>สถานะ</th>
-                      <th>เลขเครื่องที่ว่าง</th>
-                    </tr>
-                  </thead>
-                  <tbody id="assignClassTable"></tbody>
-                </table>
-              </div>
+              <aside class="workbench-side">
+                <div>
+                  <p class="text-sm font-semibold theme-accent">Available Devices</p>
+                  <h3 class="text-lg font-bold">เครื่องที่พร้อมยืม</h3>
+                  <p class="mt-1 text-sm text-stone-600">รายการนี้ดึงจากสถานะ “ว่าง” ในชีต Chromebooks</p>
+                </div>
+                <div id="assignAvailableList" class="device-list">
+                  <p class="empty-state">กำลังรอโหลดเครื่องว่าง...</p>
+                </div>
+                <div class="hint-box">
+                  เลือกเลขเครื่องจาก dropdown ในแถวของนักเรียน แล้วกด “บันทึกยืมที่เลือก” เพื่อทำหลายคนพร้อมกัน
+                </div>
+              </aside>
             </section>
 
             <form id="assignForm" class="hidden grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -209,7 +248,7 @@
                 <span class="text-sm font-medium">เลือกห้องเรียน / ครู</span>
                 <select id="classSelect" class="input mt-1"></select>
               </label>
-              <button id="loadBorrowersBtn" class="btn-secondary self-end">ดึงรายชื่อ</button>
+              <button id="loadBorrowersBtn" class="btn-secondary self-end" type="button">ดึงรายชื่อ</button>
             </div>
             <div class="overflow-x-auto">
               <table class="table">
@@ -279,14 +318,14 @@
     </main>
   </div>
 
-  <div id="loginModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/70 p-4">
-    <section class="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
+  <div id="loginModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+    <section class="modal-card w-full max-w-md bg-white p-6">
       <div class="mb-5 flex items-start justify-between gap-3">
         <div>
           <p class="text-sm font-semibold theme-accent">Admin Login</p>
-          <h2 class="text-2xl font-bold">เข้าสู่ระบบแอดมิน</h2>
+          <h2 id="loginTitle" class="text-2xl font-bold">เข้าสู่ระบบแอดมิน</h2>
         </div>
-        <button id="closeLoginBtn" class="text-2xl leading-none text-slate-400 hover:text-slate-900" type="button">&times;</button>
+        <button id="closeLoginBtn" class="modal-close" type="button" aria-label="ปิดหน้าต่างเข้าสู่ระบบ">&times;</button>
       </div>
       <form id="loginForm" class="space-y-4">
         <label class="block">
@@ -302,7 +341,7 @@
     </section>
   </div>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   <script src="app.js"></script>
 </body>
 </html>

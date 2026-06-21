@@ -6,6 +6,8 @@ const state = {
   studentRows: [],
   borrowRows: [],
   availableDevices: [],
+  assignClassStudents: [],
+  assignStudentSearch: '',
   dashboardTables: { students: [], teachers: [], available: [] },
   activeDashboardTable: 'students',
   dashboardSearch: '',
@@ -27,9 +29,15 @@ function bindEvents() {
   document.getElementById('mobileRefreshBtn').addEventListener('click', loadPublicDashboard);
   document.getElementById('mobileLoginBtn').addEventListener('click', openLoginModal);
   document.getElementById('mobileLogoutBtn').addEventListener('click', logout);
-  document.querySelectorAll('.side-link').forEach((button) => {
+  document.querySelectorAll('[data-scroll-target]').forEach((button) => {
     button.addEventListener('click', () => {
-      document.querySelectorAll('.side-link').forEach((link) => link.classList.toggle('active', link === button));
+      if (button.classList.contains('side-link')) {
+        document.querySelectorAll('.side-link').forEach((link) => link.classList.toggle('active', link === button));
+      }
+      if (button.dataset.scrollTarget === 'adminPanel' && !state.admin) {
+        openLoginModal();
+        return;
+      }
       document.getElementById(button.dataset.scrollTarget).scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
@@ -49,10 +57,19 @@ function bindEvents() {
   document.getElementById('loginModal').addEventListener('click', (event) => {
     if (event.target.id === 'loginModal') closeLoginModal();
   });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !document.getElementById('loginModal').classList.contains('hidden')) {
+      closeLoginModal();
+    }
+  });
   document.getElementById('loginForm').addEventListener('submit', onLogin);
   document.getElementById('logoutBtn').addEventListener('click', logout);
   document.getElementById('assignBorrowerType').addEventListener('change', updateAssignBorrowerFields);
   document.getElementById('assignForm').addEventListener('submit', onAssignDevice);
+  document.getElementById('assignStudentSearchInput').addEventListener('input', (event) => {
+    state.assignStudentSearch = event.target.value;
+    renderAssignClassTable();
+  });
   document.getElementById('loadClassStudentsBtn').addEventListener('click', loadAssignClassStudents);
   document.getElementById('bulkAssignBtn').addEventListener('click', onBulkAssignDevices);
   document.getElementById('loadBorrowersBtn').addEventListener('click', loadBorrowers);
@@ -107,6 +124,8 @@ function closeLoginModal() {
 
 async function onLogin(event) {
   event.preventDefault();
+  const button = event.submitter || document.querySelector('#loginForm button[type="submit"]');
+  setButtonBusy(button, true, 'กำลังเข้าสู่ระบบ...');
   try {
     const res = await api('login', {
       username: document.getElementById('username').value,
@@ -116,9 +135,12 @@ async function onLogin(event) {
     localStorage.setItem('chromebook_admin', JSON.stringify(res));
     closeLoginModal();
     renderAuthState();
+    document.getElementById('adminPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     toast('เข้าสู่ระบบสำเร็จ');
   } catch (error) {
     toast(error.message, true);
+  } finally {
+    setButtonBusy(button, false);
   }
 }
 
@@ -186,7 +208,7 @@ function renderActiveDashboardTable() {
   rows.forEach((row) => {
     if (type === 'available') {
       tbody.insertAdjacentHTML('beforeend', `
-        <tr>
+        <tr class="row-ready">
           <td>${escapeHtml(row.device_key || '-')}</td>
           <td>${escapeHtml(row.asset_no || '-')}</td>
           <td>${statusBadge('ว่าง')}</td>
@@ -196,7 +218,7 @@ function renderActiveDashboardTable() {
     }
 
     tbody.insertAdjacentHTML('beforeend', `
-      <tr>
+      <tr class="${dashboardRowClass(type, row)}">
         <td>${escapeHtml(row.borrower_id || '-')}</td>
         <td>${escapeHtml(row.full_name || '-')}</td>
         <td>${escapeHtml(type === 'teachers' ? 'ครู' : row.grade_level || '-')}</td>
@@ -211,6 +233,12 @@ function renderActiveDashboardTable() {
   if (!rows.length) {
     tbody.innerHTML = `<tr><td colspan="${type === 'available' ? 3 : 7}" class="text-center text-slate-500">ไม่พบข้อมูล</td></tr>`;
   }
+}
+
+function dashboardRowClass(type, row) {
+  if (type === 'returned' || row.status === 'คืนแล้ว') return 'row-returned';
+  if (row.status === 'ส่งซ่อม') return 'row-repair';
+  return 'row-borrowing';
 }
 
 function filterDashboardRows(rows, type) {
@@ -294,6 +322,7 @@ async function loadAvailableDeviceOptions() {
     if (!devices.length) {
       select.innerHTML = '<option value="">ไม่มีเครื่องว่าง</option>';
     }
+    renderAvailableDevicePanel();
   } catch (error) {
     toast(error.message, true);
   }
@@ -351,19 +380,39 @@ async function loadAssignClassStudents() {
     return;
   }
 
+  const button = document.getElementById('loadClassStudentsBtn');
+  setButtonBusy(button, true, 'กำลังดึงรายชื่อ...');
   try {
     await loadAvailableDeviceOptions();
     const students = await api('getStudentsByClass', { grade_level: gradeLevel });
-    renderAssignClassTable(students);
+    state.assignClassStudents = students;
+    state.assignStudentSearch = '';
+    document.getElementById('assignStudentSearchInput').value = '';
+    renderAssignClassTable();
   } catch (error) {
     toast(error.message, true);
+  } finally {
+    setButtonBusy(button, false);
   }
 }
 
-function renderAssignClassTable(students) {
+function renderAssignClassTable(students = state.assignClassStudents) {
   const tbody = document.getElementById('assignClassTable');
+  const meta = document.getElementById('assignClassMeta');
+  const selectedByStudent = {};
+  document.querySelectorAll('.class-device-select').forEach((select) => {
+    if (select.value) selectedByStudent[select.dataset.studentId] = select.value;
+  });
+  const rows = filterAssignStudents(students);
+  const readyCount = students.filter((student) => !student.already_borrowing).length;
+  const selectedCount = Object.keys(selectedByStudent).length;
+
   tbody.innerHTML = '';
-  students.forEach((student) => {
+  meta.textContent = students.length
+    ? `พบ ${students.length} คน | พร้อมยืม ${readyCount} คน | เลือกเครื่องแล้ว ${selectedCount} คน | แสดง ${rows.length} คน`
+    : 'เลือกห้องแล้วกดดึงรายชื่อ เพื่อเริ่มเลือกเลขเครื่องที่ยังว่าง';
+
+  rows.forEach((student) => {
     tbody.insertAdjacentHTML('beforeend', `
       <tr class="${student.already_borrowing ? 'row-borrowing' : 'row-ready'}">
         <td>${escapeHtml(student.grade_level || '-')}</td>
@@ -375,16 +424,57 @@ function renderAssignClassTable(students) {
             <option value="">เลือกเครื่อง</option>
             ${state.availableDevices.map((device) => {
               const label = device.asset_no ? `${device.device_key} - ${device.asset_no}` : device.device_key;
-              return `<option value="${escapeAttr(device.device_key)}">${escapeHtml(label)}</option>`;
+              const selected = String(selectedByStudent[student.student_id] || '') === String(device.device_key) ? ' selected' : '';
+              return `<option value="${escapeAttr(device.device_key)}"${selected}>${escapeHtml(label)}</option>`;
             }).join('')}
           </select>
         </td>
       </tr>
     `);
   });
-  if (!students.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-slate-500">ไม่พบนักเรียนในห้องนี้</td></tr>';
+  document.querySelectorAll('.class-device-select').forEach((select) => {
+    select.addEventListener('change', () => renderAssignClassMeta());
+  });
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-slate-500">ไม่พบนักเรียนตามเงื่อนไขนี้</td></tr>';
   }
+}
+
+function renderAssignClassMeta() {
+  const meta = document.getElementById('assignClassMeta');
+  const students = state.assignClassStudents;
+  const rows = filterAssignStudents(students);
+  const readyCount = students.filter((student) => !student.already_borrowing).length;
+  const selectedCount = Array.from(document.querySelectorAll('.class-device-select')).filter((select) => select.value).length;
+  meta.textContent = students.length
+    ? `พบ ${students.length} คน | พร้อมยืม ${readyCount} คน | เลือกเครื่องแล้ว ${selectedCount} คน | แสดง ${rows.length} คน`
+    : 'เลือกห้องแล้วกดดึงรายชื่อ เพื่อเริ่มเลือกเลขเครื่องที่ยังว่าง';
+}
+
+function filterAssignStudents(students) {
+  const q = normalizeSearch(state.assignStudentSearch);
+  if (!q) return students;
+  return students.filter((student) => normalizeSearch([
+    student.student_id,
+    student.full_name,
+    student.grade_level,
+  ].join(' ')).includes(q));
+}
+
+function renderAvailableDevicePanel() {
+  const list = document.getElementById('assignAvailableList');
+  if (!list) return;
+  const devices = state.availableDevices || [];
+  if (!devices.length) {
+    list.innerHTML = '<p class="empty-state">ยังไม่มีเครื่องว่างในระบบ</p>';
+    return;
+  }
+  list.innerHTML = devices.slice(0, 80).map((device) => `
+    <div class="device-chip">
+      <strong>${escapeHtml(device.device_key || '-')}</strong>
+      <span>${escapeHtml(device.asset_no || 'ไม่มีเลขทรัพย์สิน')}</span>
+    </div>
+  `).join('');
 }
 
 async function onBulkAssignDevices() {
@@ -402,6 +492,8 @@ async function onBulkAssignDevices() {
     return;
   }
 
+  const button = document.getElementById('bulkAssignBtn');
+  setButtonBusy(button, true, 'กำลังบันทึก...');
   try {
     const res = await api('bulkAssignDevices', {
       assignments,
@@ -413,6 +505,8 @@ async function onBulkAssignDevices() {
     loadPublicDashboard();
   } catch (error) {
     toast(error.message, true);
+  } finally {
+    setButtonBusy(button, false);
   }
 }
 
@@ -432,6 +526,8 @@ async function loadBorrowers() {
     return;
   }
 
+  const button = document.getElementById('loadBorrowersBtn');
+  setButtonBusy(button, true, 'กำลังดึงรายชื่อ...');
   try {
     const rows = await api('getBorrowersByClass', { grade_level: gradeLevel });
     const tbody = document.getElementById('borrowersTable');
@@ -454,6 +550,8 @@ async function loadBorrowers() {
     }
   } catch (error) {
     toast(error.message, true);
+  } finally {
+    setButtonBusy(button, false);
   }
 }
 
@@ -470,6 +568,8 @@ async function onBulkReturn() {
     return;
   }
 
+  const button = document.getElementById('bulkReturnBtn');
+  setButtonBusy(button, true, 'กำลังคืนเครื่อง...');
   try {
     const res = await api('bulkReturn', {
       transaction_ids: transactionIds,
@@ -482,6 +582,8 @@ async function onBulkReturn() {
     loadPublicDashboard();
   } catch (error) {
     toast(error.message, true);
+  } finally {
+    setButtonBusy(button, false);
   }
 }
 
@@ -692,6 +794,8 @@ async function onImportStudents() {
     toast('กรุณาเลือกไฟล์ข้อมูลนักเรียนก่อน', true);
     return;
   }
+  const button = document.getElementById('importStudentsBtn');
+  setButtonBusy(button, true, 'กำลังนำเข้า...');
   try {
     const summary = await importInChunks('importStudentMaster', state.studentRows, 'กำลังนำเข้าฐานนักเรียน');
     toast(`นำเข้านักเรียนสำเร็จ: เพิ่ม ${summary.imported_students || 0}, อัปเดต ${summary.updated_students || 0}, ข้าม ${summary.skipped_rows || 0}`);
@@ -699,6 +803,8 @@ async function onImportStudents() {
     loadClasses();
   } catch (error) {
     toast(error.message, true);
+  } finally {
+    setButtonBusy(button, false);
   }
 }
 
@@ -707,6 +813,8 @@ async function onImportBorrowHistory() {
     toast('กรุณาเลือกไฟล์ฐานข้อมูลยืมก่อน', true);
     return;
   }
+  const button = document.getElementById('importBorrowBtn');
+  setButtonBusy(button, true, 'กำลังนำเข้า...');
   try {
     const summary = await importInChunks('importBorrowHistory', state.borrowRows, 'กำลังนำเข้ายอดยืม');
     toast(`นำเข้ายอดยืมสำเร็จ: เครื่องใหม่ ${summary.imported_devices || 0}, ครูใหม่ ${summary.imported_teachers || 0}, รายการ ${summary.imported_transactions || 0}, ไม่พบนักเรียน ${summary.missing_students || 0}, ข้าม ${summary.skipped_rows || 0}`);
@@ -714,6 +822,8 @@ async function onImportBorrowHistory() {
     loadClasses();
   } catch (error) {
     toast(error.message, true);
+  } finally {
+    setButtonBusy(button, false);
   }
 }
 
@@ -768,6 +878,21 @@ function toast(message, isError = false) {
   el.classList.remove('hidden');
   clearTimeout(window.toastTimer);
   window.toastTimer = setTimeout(() => el.classList.add('hidden'), 3600);
+}
+
+function setButtonBusy(button, isBusy, busyText = 'กำลังทำงาน...') {
+  if (!button) return;
+  if (isBusy) {
+    button.dataset.originalText = button.textContent;
+    button.textContent = busyText;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    return;
+  }
+  button.textContent = button.dataset.originalText || button.textContent;
+  button.disabled = false;
+  button.removeAttribute('aria-busy');
+  delete button.dataset.originalText;
 }
 
 function formatCell(value) {
