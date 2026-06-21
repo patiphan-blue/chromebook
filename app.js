@@ -165,6 +165,7 @@ function showAdminPage(page) {
 }
 
 async function loadPublicDashboard() {
+  renderDashboardLoading();
   try {
     const [dashboard, tables, availableDevices] = await Promise.all([
       api('dashboard'),
@@ -301,6 +302,7 @@ async function onAssignDevice(event) {
 }
 
 async function loadAvailableDeviceOptions() {
+  renderAvailableDeviceLoading();
   try {
     const devices = await api('listAvailableDevices');
     state.availableDevices = devices;
@@ -382,6 +384,8 @@ async function loadAssignClassStudents() {
 
   const button = document.getElementById('loadClassStudentsBtn');
   setButtonBusy(button, true, 'กำลังดึงรายชื่อ...');
+  setTableLoading('assignClassTable', 5, 'กำลังโหลดรายชื่อนักเรียน...');
+  document.getElementById('assignClassMeta').textContent = 'กำลังดึงรายชื่อจากฐานข้อมูล กรุณารอสักครู่...';
   try {
     await loadAvailableDeviceOptions();
     const students = await api('getStudentsByClass', { grade_level: gradeLevel });
@@ -528,6 +532,7 @@ async function loadBorrowers() {
 
   const button = document.getElementById('loadBorrowersBtn');
   setButtonBusy(button, true, 'กำลังดึงรายชื่อ...');
+  setTableLoading('borrowersTable', 6, 'กำลังโหลดรายการที่ยืมอยู่...');
   try {
     const rows = await api('getBorrowersByClass', { grade_level: gradeLevel });
     const tbody = document.getElementById('borrowersTable');
@@ -553,6 +558,36 @@ async function loadBorrowers() {
   } finally {
     setButtonBusy(button, false);
   }
+}
+
+function renderDashboardLoading() {
+  const tbody = document.getElementById('dashboardTableRows');
+  const meta = document.getElementById('dashboardTableMeta');
+  if (meta) meta.textContent = 'กำลังโหลดข้อมูลล่าสุด...';
+  if (tbody) setTableLoading('dashboardTableRows', state.activeDashboardTable === 'available' ? 3 : 7, 'กำลังโหลดตารางติดตาม...');
+}
+
+function renderAvailableDeviceLoading() {
+  const list = document.getElementById('assignAvailableList');
+  if (!list) return;
+  list.innerHTML = `
+    <div class="loading-card"></div>
+    <div class="loading-card"></div>
+    <div class="loading-card"></div>
+  `;
+}
+
+function setTableLoading(tbodyId, colspan, message) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  tbody.innerHTML = `
+    <tr class="loading-row">
+      <td colspan="${colspan}">
+        <span class="loading-dot" aria-hidden="true"></span>
+        ${escapeHtml(message)}
+      </td>
+    </tr>
+  `;
 }
 
 function toggleAllReturns(event) {
