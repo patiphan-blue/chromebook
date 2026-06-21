@@ -414,26 +414,33 @@ select:focus-visible {
 
 .device-chip {
   display: grid;
-  grid-template-columns: minmax(4rem, 0.7fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 0.65rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.18rem;
   border: 1px solid rgba(21, 128, 61, 0.22);
   border-radius: 10px;
   padding: 0.62rem 0.7rem;
   background: rgba(220, 252, 231, 0.58);
+  min-width: 0;
 }
 
 .device-chip strong {
+  display: block;
+  overflow: hidden;
   color: #14532d;
   font-weight: 950;
   font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .device-chip span {
+  display: block;
   overflow: hidden;
   color: #3f6212;
   font-size: 0.8rem;
   font-weight: 700;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

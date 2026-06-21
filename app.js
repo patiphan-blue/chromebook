@@ -474,7 +474,7 @@ function renderAvailableDevicePanel() {
     return;
   }
   list.innerHTML = devices.slice(0, 80).map((device) => `
-    <div class="device-chip">
+    <div class="device-chip" title="${escapeAttr([device.device_key, device.asset_no].filter(Boolean).join(' - '))}">
       <strong>${escapeHtml(device.device_key || '-')}</strong>
       <span>${escapeHtml(device.asset_no || 'ไม่มีเลขทรัพย์สิน')}</span>
     </div>
