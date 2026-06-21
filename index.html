@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ระบบยืม-คืน Chromebook</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="text-stone-950">
+  <div class="min-h-screen school-canvas">
+    <aside class="sidebar-shell fixed inset-y-4 left-4 z-40 hidden w-72 flex-col p-4 lg:flex">
+      <div class="mb-8 flex items-center gap-3">
+        <img class="school-logo" src="https://i.postimg.cc/mZ9BsgXT/loko-pay.jpg" alt="โลโก้โรงเรียนปายวิทยาคาร">
+        <div>
+          <p class="eyebrow"><span></span> Paiwittayakarn</p>
+          <h1 class="text-lg font-bold">โรงเรียนปายวิทยาคาร</h1>
+        </div>
+      </div>
+      <nav class="space-y-2">
+        <button class="side-link active" data-scroll-target="dashboardSection">แดชบอร์ด</button>
+        <button class="side-link" data-scroll-target="tableSection">ตารางติดตาม</button>
+        <button class="side-link" data-scroll-target="adminPanel">เครื่องมือแอดมิน</button>
+      </nav>
+      <div class="mt-auto space-y-2">
+        <button id="openLoginBtn" class="btn-primary w-full">เข้าสู่ระบบแอดมิน</button>
+        <button id="logoutBtn" class="btn-ghost hidden w-full">ออกจากระบบ</button>
+        <button id="publicRefreshBtn" class="btn-secondary w-full">รีเฟรชข้อมูล</button>
+      </div>
+    </aside>
+
+    <header class="sticky top-0 z-30 px-4 pt-4 sm:px-6 lg:hidden">
+      <div class="nav-pill mx-auto flex min-h-16 max-w-7xl items-center justify-between px-4 py-2 sm:px-6">
+        <div class="flex items-center gap-3">
+          <img class="school-logo mobile" src="https://i.postimg.cc/mZ9BsgXT/loko-pay.jpg" alt="โลโก้โรงเรียนปายวิทยาคาร">
+          <div>
+            <p class="eyebrow"><span></span> Chromebook Borrowing</p>
+            <h1 class="text-base font-bold text-stone-950 sm:text-lg">โรงเรียนปายวิทยาคาร</h1>
+            <p class="text-xs font-semibold text-stone-500">ระบบยืม-คืนและติดตาม Chromebook</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="mobileRefreshBtn" class="btn-ghost">รีเฟรช</button>
+          <button id="mobileLoginBtn" class="btn-primary">แอดมิน</button>
+          <button id="mobileLogoutBtn" class="btn-ghost hidden">ออก</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:ml-80 lg:py-8">
+      <section id="dashboardSection" class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <article class="metric-card">
+          <span>เครื่องทั้งหมด</span>
+          <strong id="totalDevices">0</strong>
+        </article>
+        <article class="metric-card">
+          <span>ว่าง</span>
+          <strong id="availableDevices" class="theme-success">0</strong>
+        </article>
+        <article class="metric-card">
+          <span>กำลังยืม</span>
+          <strong id="borrowedDevices" class="theme-warning">0</strong>
+        </article>
+        <article class="metric-card">
+          <span>ส่งซ่อม</span>
+          <strong id="repairDevices" class="theme-danger">0</strong>
+        </article>
+        <article class="metric-card">
+          <span>นักเรียนในฐาน</span>
+          <strong id="totalStudents">0</strong>
+        </article>
+      </section>
+
+      <section class="mb-6 grid grid-cols-1 gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+        <article class="dashboard-panel">
+          <div class="mb-4">
+            <p class="text-sm font-semibold theme-accent">Status Mix</p>
+            <h2 class="text-xl font-bold">ภาพรวมสถานะเครื่อง</h2>
+          </div>
+          <div class="chart-wrap">
+            <div class="donut-chart" id="statusDonut"></div>
+            <div class="space-y-3">
+              <div class="chart-legend"><span class="legend-dot green"></span>ว่าง <strong id="legendAvailable">0</strong></div>
+              <div class="chart-legend"><span class="legend-dot orange"></span>กำลังยืม <strong id="legendBorrowed">0</strong></div>
+              <div class="chart-legend"><span class="legend-dot red"></span>ส่งซ่อม <strong id="legendRepair">0</strong></div>
+            </div>
+          </div>
+        </article>
+        <article class="dashboard-panel">
+          <div class="mb-4">
+            <p class="text-sm font-semibold theme-accent">Borrower Split</p>
+            <h2 class="text-xl font-bold">สัดส่วนผู้ยืมปัจจุบัน</h2>
+          </div>
+          <div class="bar-stat"><span>นักเรียน</span><div><i id="studentBar"></i></div><strong id="studentBarText">0</strong></div>
+          <div class="bar-stat"><span>ครู</span><div><i id="teacherBar"></i></div><strong id="teacherBarText">0</strong></div>
+        </article>
+      </section>
+
+      <section id="tableSection" class="dashboard-panel">
+        <div class="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p class="text-sm font-semibold theme-accent">Borrowing Ledger</p>
+            <h2 class="text-xl font-bold">ตารางติดตามการยืม-คืน</h2>
+            <p id="dashboardTableMeta" class="mt-1 text-sm text-stone-500">แสดงสูงสุด 50 แถวต่อแท็บ</p>
+          </div>
+          <div class="flex flex-col gap-3 md:flex-row md:items-center">
+            <input id="dashboardSearchInput" class="input md:w-80" placeholder="ค้นหารหัส / ชื่อ / เลขเครื่อง">
+            <div class="flex flex-wrap gap-2">
+              <button class="table-tab active" data-table="students">นักเรียน</button>
+              <button class="table-tab" data-table="teachers">ครู</button>
+              <button class="table-tab" data-table="returned">คืนแล้ว</button>
+              <button class="table-tab" data-table="available">เครื่องว่าง</button>
+            </div>
+          </div>
+        </div>
+        <div class="table-scroll overflow-x-auto">
+          <table class="table">
+            <thead id="dashboardTableHead"></thead>
+            <tbody id="dashboardTableRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="adminPanel" class="mt-6 hidden">
+        <div class="dashboard-panel">
+          <div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p id="adminName" class="text-sm font-semibold theme-accent"></p>
+              <h2 class="text-xl font-bold">เครื่องมือแอดมิน</h2>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button class="tab-btn active" data-page="assign">ยืมเครื่อง</button>
+              <button class="tab-btn" data-page="return">คืนหลายคน</button>
+              <button class="tab-btn" data-page="import">นำเข้า Excel</button>
+            </div>
+          </div>
+
+          <section id="assignPage" class="admin-page">
+            <div class="mb-4 flex flex-wrap gap-2">
+              <button class="assign-mode-btn active" data-assign-mode="class">ยืมรายห้อง</button>
+              <button class="assign-mode-btn" data-assign-mode="single">ยืมรายคน / ค้นรหัส</button>
+            </div>
+
+            <section id="assignClassMode" class="space-y-4">
+              <div class="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_auto]">
+                <label>
+                  <span class="text-sm font-medium">เลือกห้องเรียน</span>
+                  <select id="assignClassSelect" class="input mt-1"></select>
+                </label>
+                <button id="loadClassStudentsBtn" class="btn-secondary self-end" type="button">ดึงรายชื่อ</button>
+                <button id="bulkAssignBtn" class="btn-primary self-end" type="button">บันทึกยืมที่เลือก</button>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>ชั้น+ห้อง</th>
+                      <th>รหัสนักเรียน</th>
+                      <th>ชื่อ-สกุล</th>
+                      <th>สถานะ</th>
+                      <th>เลขเครื่องที่ว่าง</th>
+                    </tr>
+                  </thead>
+                  <tbody id="assignClassTable"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <form id="assignForm" class="hidden grid grid-cols-1 gap-4 md:grid-cols-3">
+              <label class="block">
+                <span class="text-sm font-medium">ประเภทผู้ยืม</span>
+                <select id="assignBorrowerType" class="input mt-1">
+                  <option value="student">นักเรียน</option>
+                  <option value="teacher">ครู</option>
+                </select>
+              </label>
+              <label class="block">
+                <span id="assignStudentLabel" class="text-sm font-medium">รหัสนักเรียน</span>
+                <input id="assignStudentId" class="input mt-1" required>
+              </label>
+              <label id="assignTeacherNameWrap" class="block hidden">
+                <span class="text-sm font-medium">ชื่อครู</span>
+                <input id="assignTeacherName" class="input mt-1">
+              </label>
+              <label class="block">
+                <span class="text-sm font-medium">เลขเครื่องนิยม</span>
+                <select id="assignDeviceKey" class="input mt-1" required>
+                  <option value="">กำลังโหลดเครื่องว่าง...</option>
+                </select>
+              </label>
+              <label class="block">
+                <span class="text-sm font-medium">วันที่ยืม</span>
+                <input id="assignBorrowDate" type="date" class="input mt-1">
+              </label>
+              <label class="block md:col-span-2">
+                <span class="text-sm font-medium">หมายเหตุ</span>
+                <input id="assignNote" class="input mt-1">
+              </label>
+              <div class="flex items-end">
+                <button class="btn-primary w-full" type="submit">บันทึกการยืม</button>
+              </div>
+            </form>
+          </section>
+
+          <section id="returnPage" class="admin-page hidden space-y-4">
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
+              <label>
+                <span class="text-sm font-medium">เลือกห้องเรียน / ครู</span>
+                <select id="classSelect" class="input mt-1"></select>
+              </label>
+              <button id="loadBorrowersBtn" class="btn-secondary self-end">ดึงรายชื่อ</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th><input id="selectAllReturn" type="checkbox"></th>
+                    <th>ชั้น+ห้อง</th>
+                    <th>รหัส</th>
+                    <th>ชื่อ-สกุล</th>
+                    <th>เลขเครื่อง</th>
+                    <th>วันที่ยืม</th>
+                  </tr>
+                </thead>
+                <tbody id="borrowersTable"></tbody>
+              </table>
+            </div>
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <input id="returnDate" type="date" class="input sm:max-w-56">
+              <button id="bulkReturnBtn" class="btn-primary">คืนเครื่องที่เลือก</button>
+            </div>
+          </section>
+
+          <section id="importPage" class="admin-page hidden space-y-4">
+            <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <article class="sub-panel">
+                <div class="mb-3 flex items-start justify-between gap-3">
+                  <div>
+                    <p class="text-sm font-semibold theme-accent">ไฟล์ที่ 1</p>
+                    <h3 class="font-bold">ข้อมูลนักเรียนทั้งโรงเรียน</h3>
+                  </div>
+                  <span id="studentCount" class="badge badge-blue">0 แถว</span>
+                </div>
+                <input id="studentMasterFile" type="file" accept=".xlsx,.xls,.csv" class="input">
+                <button id="importStudentsBtn" class="btn-primary mt-3 w-full">นำเข้าฐานนักเรียน</button>
+                <div class="mt-3 overflow-x-auto">
+                  <table class="table">
+                    <thead id="studentPreviewHead"></thead>
+                    <tbody id="studentPreviewBody">
+                      <tr><td class="text-center text-slate-500">ยังไม่มีข้อมูลตัวอย่าง</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+              <article class="sub-panel">
+                <div class="mb-3 flex items-start justify-between gap-3">
+                  <div>
+                    <p class="text-sm font-semibold theme-accent">ไฟล์ที่ 2</p>
+                    <h3 class="font-bold">ฐานข้อมูลยืมเก่า</h3>
+                  </div>
+                  <span id="borrowCount" class="badge badge-orange">0 แถว</span>
+                </div>
+                <input id="borrowHistoryFile" type="file" accept=".xlsx,.xls,.csv" class="input">
+                <button id="importBorrowBtn" class="btn-primary mt-3 w-full">นำเข้ายอดยืมเก่า</button>
+                <div class="mt-3 overflow-x-auto">
+                  <table class="table">
+                    <thead id="borrowPreviewHead"></thead>
+                    <tbody id="borrowPreviewBody">
+                      <tr><td class="text-center text-slate-500">ยังไม่มีข้อมูลตัวอย่าง</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="loginModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/70 p-4">
+    <section class="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
+      <div class="mb-5 flex items-start justify-between gap-3">
+        <div>
+          <p class="text-sm font-semibold theme-accent">Admin Login</p>
+          <h2 class="text-2xl font-bold">เข้าสู่ระบบแอดมิน</h2>
+        </div>
+        <button id="closeLoginBtn" class="text-2xl leading-none text-slate-400 hover:text-slate-900" type="button">&times;</button>
+      </div>
+      <form id="loginForm" class="space-y-4">
+        <label class="block">
+          <span class="text-sm font-medium">ชื่อผู้ใช้</span>
+          <input id="username" class="input mt-1" autocomplete="username" required>
+        </label>
+        <label class="block">
+          <span class="text-sm font-medium">รหัสผ่าน</span>
+          <input id="password" type="password" class="input mt-1" autocomplete="current-password" required>
+        </label>
+        <button class="btn-primary w-full" type="submit">เข้าสู่ระบบ</button>
+      </form>
+    </section>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>
