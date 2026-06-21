@@ -579,6 +579,48 @@ select:focus-visible {
   background: #fff;
 }
 
+.workbench-main .compact-table {
+  max-height: 540px;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+}
+
+.compact-table .table {
+  min-width: 840px;
+  table-layout: fixed;
+}
+
+.compact-table .table th:nth-child(1),
+.compact-table .table td:nth-child(1) {
+  width: 6rem;
+}
+
+.compact-table .table th:nth-child(2),
+.compact-table .table td:nth-child(2) {
+  width: 7rem;
+}
+
+.compact-table .table th:nth-child(4),
+.compact-table .table td:nth-child(4) {
+  width: 8rem;
+}
+
+.compact-table .table th:nth-child(5),
+.compact-table .table td:nth-child(5) {
+  width: 15rem;
+}
+
+.compact-table .table td:nth-child(3) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.class-device-select {
+  width: 100%;
+  min-width: 0;
+}
+
 .table {
   width: 100%;
   border-collapse: separate;
@@ -750,6 +792,22 @@ select:focus-visible {
 
   .toolbar-grid {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 1200px) {
+  .workbench-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workbench-side {
+    order: -1;
+    position: static;
+  }
+
+  .device-list {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    max-height: 180px;
   }
 }
 
