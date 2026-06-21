@@ -594,38 +594,44 @@ select:focus-visible {
 }
 
 .compact-table .table {
-  min-width: 840px;
+  min-width: 720px;
   table-layout: fixed;
 }
 
 .compact-table .table th:nth-child(1),
 .compact-table .table td:nth-child(1) {
-  width: 6rem;
+  width: 5.25rem;
 }
 
 .compact-table .table th:nth-child(2),
 .compact-table .table td:nth-child(2) {
-  width: 7rem;
+  width: 6.4rem;
 }
 
 .compact-table .table th:nth-child(4),
 .compact-table .table td:nth-child(4) {
-  width: 8rem;
+  width: 7rem;
 }
 
 .compact-table .table th:nth-child(5),
 .compact-table .table td:nth-child(5) {
-  width: 15rem;
+  width: 11rem;
 }
 
 .compact-table .table td:nth-child(3) {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-table .table th:nth-child(3) {
+  width: auto;
 }
 
 .class-device-select {
   width: 100%;
   min-width: 0;
+  padding-inline: 0.75rem 2rem;
 }
 
 .table {
