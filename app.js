@@ -10,9 +10,12 @@ const state = {
   borrowRequests: [],
   assignClassStudents: [],
   assignStudentSearch: '',
-  dashboardTables: { students: [], teachers: [], available: [] },
+  dashboardTables: { students: [], teachers: [], returned: [], available: [] },
   activeDashboardTable: 'students',
   dashboardSearch: '',
+  dashboardClassFilter: '',
+  dashboardPage: 1,
+  dashboardPageSize: 50,
 };
 
 const STUDENT_ID_KEYS = ['เลขประจำตัวนักเรียน', 'รหัสนักเรียน', 'student_id', 'เลขประจำตัว'];
@@ -48,11 +51,33 @@ function bindEvents() {
   });
   document.getElementById('dashboardSearchInput').addEventListener('input', (event) => {
     state.dashboardSearch = event.target.value;
+    state.dashboardPage = 1;
+    renderActiveDashboardTable();
+  });
+  document.getElementById('dashboardClassFilter').addEventListener('change', (event) => {
+    state.dashboardClassFilter = event.target.value;
+    state.dashboardPage = 1;
+    renderActiveDashboardTable();
+  });
+  document.getElementById('dashboardPageSize').addEventListener('change', (event) => {
+    state.dashboardPageSize = Number(event.target.value || 50);
+    state.dashboardPage = 1;
+    renderActiveDashboardTable();
+  });
+  document.getElementById('dashboardPrevPage').addEventListener('click', () => {
+    if (state.dashboardPage > 1) {
+      state.dashboardPage--;
+      renderActiveDashboardTable();
+    }
+  });
+  document.getElementById('dashboardNextPage').addEventListener('click', () => {
+    state.dashboardPage++;
     renderActiveDashboardTable();
   });
   document.querySelectorAll('.table-tab').forEach((button) => {
     button.addEventListener('click', () => {
       state.activeDashboardTable = button.dataset.table;
+      state.dashboardPage = 1;
       document.querySelectorAll('.table-tab').forEach((tab) => tab.classList.toggle('active', tab === button));
       renderActiveDashboardTable();
     });
@@ -219,6 +244,7 @@ async function loadPublicDashboard() {
       available: availableDevices || [],
     };
     renderCharts(dashboard);
+    renderDashboardClassFilter();
     renderActiveDashboardTable();
   } catch (error) {
     toast(error.message, true);
@@ -227,17 +253,36 @@ async function loadPublicDashboard() {
 
 function renderActiveDashboardTable() {
   const type = state.activeDashboardTable;
-  const rows = filterDashboardRows(state.dashboardTables[type] || [], type).slice(0, 50);
-  const total = filterDashboardRows(state.dashboardTables[type] || [], type).length;
+  const filteredRows = filterDashboardRows(state.dashboardTables[type] || [], type);
+  const total = filteredRows.length;
+  const pageSize = state.dashboardPageSize || 50;
+  const totalPages = Math.max(Math.ceil(total / pageSize), 1);
+  state.dashboardPage = Math.min(Math.max(state.dashboardPage || 1, 1), totalPages);
+  const startIndex = total ? (state.dashboardPage - 1) * pageSize : 0;
+  const rows = filteredRows.slice(startIndex, startIndex + pageSize);
   const head = document.getElementById('dashboardTableHead');
   const tbody = document.getElementById('dashboardTableRows');
   const meta = document.getElementById('dashboardTableMeta');
+  const pageInfo = document.getElementById('dashboardPageInfo');
+  const prevButton = document.getElementById('dashboardPrevPage');
+  const nextButton = document.getElementById('dashboardNextPage');
+  const classFilter = document.getElementById('dashboardClassFilter');
 
   head.innerHTML = type === 'available'
     ? '<tr><th>เลขเครื่อง</th><th>เลขที่ทรัพย์สิน</th><th>สถานะ</th></tr>'
     : '<tr><th>รหัส</th><th>ชื่อ-สกุล</th><th>ชั้น+ห้อง</th><th>วันยืม</th><th>วันคืน</th><th>สถานะ</th><th>เลขเครื่อง</th></tr>';
   tbody.innerHTML = '';
-  meta.textContent = `แสดง ${rows.length} จาก ${total} รายการ จำกัดสูงสุด 50 แถวต่อแท็บ`;
+  meta.textContent = `แสดง ${rows.length} จาก ${total} รายการ`;
+  if (pageInfo) {
+    const from = total ? startIndex + 1 : 0;
+    const to = total ? startIndex + rows.length : 0;
+    pageInfo.textContent = `${from}-${to} จาก ${total}`;
+  }
+  if (prevButton) prevButton.disabled = state.dashboardPage <= 1;
+  if (nextButton) nextButton.disabled = state.dashboardPage >= totalPages;
+  if (classFilter) {
+    classFilter.classList.toggle('hidden', type === 'teachers' || type === 'available');
+  }
 
   rows.forEach((row) => {
     if (type === 'available') {
@@ -269,6 +314,30 @@ function renderActiveDashboardTable() {
   }
 }
 
+function renderDashboardClassFilter() {
+  const select = document.getElementById('dashboardClassFilter');
+  if (!select) return;
+  const current = select.value;
+  const classes = [
+    ...state.dashboardTables.students.map((row) => row.grade_level),
+    ...state.dashboardTables.returned.map((row) => row.borrower_type === 'student' ? row.grade_level : ''),
+  ]
+    .filter(Boolean)
+    .filter((value, index, arr) => arr.indexOf(value) === index)
+    .sort((a, b) => String(a).localeCompare(String(b), 'th', { numeric: true, sensitivity: 'base' }));
+
+  select.innerHTML = '<option value="">ทุกห้อง</option>';
+  classes.forEach((className) => {
+    select.insertAdjacentHTML('beforeend', `<option value="${escapeAttr(className)}">${escapeHtml(className)}</option>`);
+  });
+  if (current && classes.includes(current)) {
+    select.value = current;
+  } else {
+    select.value = '';
+    state.dashboardClassFilter = '';
+  }
+}
+
 function dashboardRowClass(type, row) {
   if (type === 'returned' || row.status === 'คืนแล้ว') return 'row-returned';
   if (row.status === 'ส่งซ่อม') return 'row-repair';
@@ -277,8 +346,10 @@ function dashboardRowClass(type, row) {
 
 function filterDashboardRows(rows, type) {
   const q = normalizeSearch(state.dashboardSearch);
-  if (!q) return rows;
+  const classFilter = state.dashboardClassFilter;
   return rows.filter((row) => {
+    if (classFilter && type !== 'teachers' && type !== 'available' && row.grade_level !== classFilter) return false;
+    if (!q) return true;
     const haystack = type === 'available'
       ? [row.device_key, row.asset_no, 'ว่าง']
       : [row.borrower_id, row.full_name, row.grade_level, row.device_key, row.status];

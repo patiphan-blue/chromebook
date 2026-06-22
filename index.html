@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ระบบยืม-คืน Chromebook</title>
+  <link rel="icon" type="image/jpeg" href="https://i.postimg.cc/mZ9BsgXT/loko-pay.jpg">
+  <link rel="apple-touch-icon" href="https://i.postimg.cc/mZ9BsgXT/loko-pay.jpg">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <link rel="stylesheet" href="style.css">
@@ -185,7 +187,10 @@
             <h2 class="text-xl font-bold">ตารางติดตามการยืม-คืน</h2>
             <p id="dashboardTableMeta" class="mt-1 text-sm text-stone-500">แสดงสูงสุด 50 แถวต่อแท็บ</p>
           </div>
-          <div class="flex flex-col gap-3 md:flex-row md:items-center">
+          <div class="dashboard-table-controls">
+            <select id="dashboardClassFilter" class="input">
+              <option value="">ทุกห้อง</option>
+            </select>
             <input id="dashboardSearchInput" class="input md:w-80" placeholder="ค้นหารหัส / ชื่อ / เลขเครื่อง">
             <div class="flex flex-wrap gap-2">
               <button class="table-tab active" data-table="students">นักเรียน</button>
@@ -200,6 +205,21 @@
             <thead id="dashboardTableHead"></thead>
             <tbody id="dashboardTableRows"></tbody>
           </table>
+        </div>
+        <div class="table-pager" aria-label="ควบคุมหน้าตาราง">
+          <div class="table-page-size">
+            <span>แถวต่อหน้า</span>
+            <select id="dashboardPageSize" class="input">
+              <option value="25">25</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+          <div class="table-page-nav">
+            <span id="dashboardPageInfo">0-0 จาก 0</span>
+            <button id="dashboardPrevPage" class="pager-btn" type="button" aria-label="หน้าก่อนหน้า">‹</button>
+            <button id="dashboardNextPage" class="pager-btn" type="button" aria-label="หน้าถัดไป">›</button>
+          </div>
         </div>
       </section>
 

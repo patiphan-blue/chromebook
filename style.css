@@ -215,6 +215,13 @@ select:focus-visible {
   color: var(--danger);
 }
 
+.dashboard-table-controls {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(220px, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
 .input {
   width: 100%;
   min-height: 42px;
@@ -742,6 +749,53 @@ select:focus-visible {
   background: #fff;
 }
 
+.table-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.85rem;
+  color: #57534e;
+  font-size: 0.875rem;
+}
+
+.table-page-size,
+.table-page-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.table-page-size .input {
+  min-height: 36px;
+  width: 76px;
+  padding-block: 0.35rem;
+}
+
+.pager-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: #fff;
+  color: #27272a;
+  font-size: 1.35rem;
+  line-height: 1;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.pager-btn:hover:not(:disabled) {
+  border-color: rgba(185, 28, 28, 0.45);
+  background: var(--surface-tint);
+  color: var(--school-red-dark);
+}
+
+.pager-btn:disabled {
+  opacity: 0.42;
+}
+
 .workbench-main .compact-table {
   max-height: 540px;
   overflow: auto;
@@ -963,6 +1017,10 @@ select:focus-visible {
     grid-template-columns: 1fr 1fr;
   }
 
+  .dashboard-table-controls {
+    grid-template-columns: 1fr;
+  }
+
   .request-teaser {
     align-items: flex-start;
     flex-direction: column;
@@ -1032,6 +1090,16 @@ select:focus-visible {
 
   .bar-stat {
     grid-template-columns: 4.75rem 1fr 2.25rem;
+  }
+
+  .table-pager {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .table-page-nav {
+    justify-content: space-between;
+    width: 100%;
   }
 
   .toolbar-grid {
