@@ -605,23 +605,35 @@ function importBorrowHistory(data) {
   const existingActive = new Set(txRows
     .filter((row) => isBorrowingStatus(row.status))
     .map((row) => getTransactionBorrowerKey(row) + '|' + String(row.device_key)));
+  const activeTxByDevice = {};
+  const activeTxListByDevice = {};
+  txRows.forEach((row) => {
+    if (isBorrowingStatus(row.status) && row.device_key) {
+      const deviceKey = String(row.device_key);
+      if (!activeTxByDevice[deviceKey]) activeTxByDevice[deviceKey] = row;
+      if (!activeTxListByDevice[deviceKey]) activeTxListByDevice[deviceKey] = [];
+      activeTxListByDevice[deviceKey].push(row);
+    }
+  });
 
   let deviceInserted = 0;
   let deviceUpdated = 0;
   let transactionInserted = 0;
+  let transactionUpdated = 0;
+  let duplicateTransactionsClosed = 0;
   let missingStudents = 0;
   let importedTeachers = 0;
   let skipped = 0;
 
   rows.forEach((raw) => {
     const mapped = mapBorrowRow(raw);
-    if (!mapped.student_id || !mapped.device_key) {
+    if (!getMappedBorrowerId(mapped) || !mapped.device_key) {
       skipped++;
       return;
     }
 
     const borrower = resolveBorrowerFromImport(mapped, studentMap, teacherRows, teacherMap, now);
-    if (borrower.borrower_type === 'student' && !studentMap[mapped.student_id]) {
+    if (borrower.borrower_type === 'student' && !studentMap[borrower.student_id]) {
       missingStudents++;
     }
     if (borrower.created_teacher) importedTeachers++;
@@ -648,7 +660,31 @@ function importBorrowHistory(data) {
     }
 
     const txKey = borrower.borrower_type + ':' + borrower.borrower_id + '|' + String(mapped.device_key);
-    if (!existingActive.has(txKey)) {
+    const deviceTxKey = String(mapped.device_key);
+    const activeTx = activeTxByDevice[deviceTxKey];
+    if (activeTx) {
+      activeTx.borrower_type = borrower.borrower_type;
+      activeTx.borrower_id = borrower.borrower_id;
+      activeTx.student_id = borrower.student_id;
+      activeTx.teacher_id = borrower.teacher_id;
+      activeTx.borrower_name = borrower.borrower_name;
+      activeTx.borrow_date = mapped.borrow_date || activeTx.borrow_date || todayText();
+      activeTx.return_date = '';
+      activeTx.status = STATUS.BORROWING;
+      activeTx.note = 'Updated from Excel import';
+      activeTx.updated_at = now;
+      existingActive.add(txKey);
+      transactionUpdated++;
+
+      const duplicateTxRows = (activeTxListByDevice[deviceTxKey] || []).filter((row) => row !== activeTx);
+      duplicateTxRows.forEach((row) => {
+        row.status = STATUS.RETURNED;
+        row.return_date = row.return_date || todayText();
+        row.note = row.note || 'Closed duplicate active transaction during Excel import';
+        row.updated_at = now;
+        duplicateTransactionsClosed++;
+      });
+    } else if (!existingActive.has(txKey)) {
       txRows.push({
         transaction_id: Utilities.getUuid(),
         borrower_type: borrower.borrower_type,
@@ -665,6 +701,8 @@ function importBorrowHistory(data) {
         updated_at: now,
       });
       existingActive.add(txKey);
+      activeTxByDevice[deviceTxKey] = txRows[txRows.length - 1];
+      activeTxListByDevice[deviceTxKey] = [txRows[txRows.length - 1]];
       transactionInserted++;
     }
   });
@@ -678,6 +716,8 @@ function importBorrowHistory(data) {
     imported_devices: deviceInserted,
     updated_devices: deviceUpdated,
     imported_transactions: transactionInserted,
+    updated_transactions: transactionUpdated,
+    closed_duplicate_transactions: duplicateTransactionsClosed,
     imported_teachers: importedTeachers,
     missing_students: missingStudents,
     skipped_rows: skipped,
@@ -727,7 +767,13 @@ function mapStudentRow(row) {
 function mapBorrowRow(row) {
   const student = mapStudentRow(row);
   const get = makeGetter(row);
+  const borrowerType = normalizeBorrowerType(get('borrower_type', 'ประเภทผู้ยืม', 'ประเภท'));
+  const borrowerId = get('borrower_id', 'รหัสผู้ยืม', 'รหัส', 'รหัสครู', 'teacher_id', 'เลขประจำตัวครู', 'เลขครู');
+  const teacherId = get('teacher_id', 'รหัสครู', 'เลขประจำตัวครู', 'เลขครู');
   return Object.assign(student, {
+    borrower_type: borrowerType,
+    borrower_id: borrowerId,
+    teacher_id: teacherId || (looksLikeTeacherId(borrowerId) ? borrowerId : ''),
     device_key: get('เลขเครื่องนิยม', 'Key', 'key', 'device_key', 'เลขเครื่อง', 'หมายเลขเครื่อง'),
     asset_no: get('เลขที่ทรัพย์สิน', 'asset_no', 'เลขครุภัณฑ์'),
     borrow_date: normalizeExcelDate(getRawValue(row, 'วันที่ตรวจสอบ', 'borrow_date', 'วันที่ยืม')),
@@ -736,7 +782,14 @@ function mapBorrowRow(row) {
 
 function resolveBorrowerFromImport(mapped, studentMap, teacherRows, teacherMap, now) {
   if (isTeacherBorrower(mapped)) {
-    const teacher = getOrCreateTeacherInRows(mapped.full_name || 'ครู', mapped.phone || '', teacherRows, teacherMap, now);
+    const teacher = getOrCreateTeacherInRows(
+      mapped.full_name || 'ครู',
+      mapped.phone || '',
+      teacherRows,
+      teacherMap,
+      now,
+      mapped.teacher_id || mapped.borrower_id
+    );
     return {
       borrower_type: 'teacher',
       borrower_id: teacher.teacher_id,
@@ -747,11 +800,12 @@ function resolveBorrowerFromImport(mapped, studentMap, teacherRows, teacherMap, 
     };
   }
 
-  const student = studentMap[mapped.student_id] || {};
+  const studentId = mapped.student_id || mapped.borrower_id;
+  const student = studentMap[studentId] || {};
   return {
     borrower_type: 'student',
-    borrower_id: mapped.student_id,
-    student_id: mapped.student_id,
+    borrower_id: studentId,
+    student_id: studentId,
     teacher_id: '',
     borrower_name: student.full_name || mapped.full_name || '',
     created_teacher: false,
@@ -760,9 +814,18 @@ function resolveBorrowerFromImport(mapped, studentMap, teacherRows, teacherMap, 
 
 function isTeacherBorrower(mapped) {
   const id = String(mapped.student_id || '').trim();
+  const borrowerId = String(mapped.borrower_id || '').trim();
+  const teacherId = String(mapped.teacher_id || '').trim();
+  const type = String(mapped.borrower_type || '').trim().toLowerCase();
   const name = String(mapped.full_name || '').trim();
   const prefix = String(mapped.prefix || '').trim();
-  return id === '0' || prefix === 'ครู' || name.indexOf('ครู') === 0;
+  return type === 'teacher' ||
+    type === 'ครู' ||
+    looksLikeTeacherId(teacherId) ||
+    looksLikeTeacherId(borrowerId) ||
+    id === '0' ||
+    prefix === 'ครู' ||
+    name.indexOf('ครู') === 0;
 }
 
 function getOrCreateTeacher(fullName, phone) {
@@ -779,14 +842,24 @@ function getOrCreateTeacher(fullName, phone) {
   };
 }
 
-function getOrCreateTeacherInRows(fullName, phone, rows, map, now) {
+function getOrCreateTeacherInRows(fullName, phone, rows, map, now, preferredTeacherId) {
   const cleanName = normalizeTeacherName(fullName);
-  const teacherId = makeTeacherId(cleanName);
+  const cleanNameKey = teacherNameKey(cleanName);
+  const existingByName = rows.find((row) => teacherNameKey(row.full_name) === cleanNameKey);
+  const teacherId = normalizeTeacherId(preferredTeacherId) || (existingByName && existingByName.teacher_id) || makeTeacherId(cleanName);
   if (map[teacherId]) {
     if (phone && !map[teacherId].phone) map[teacherId].phone = phone;
+    if (cleanName && (!map[teacherId].full_name || map[teacherId].full_name === 'ครูไม่ระบุชื่อ')) map[teacherId].full_name = cleanName;
     map[teacherId].updated_at = now;
     map[teacherId].created_teacher = false;
     return map[teacherId];
+  }
+  if (existingByName) {
+    if (phone && !existingByName.phone) existingByName.phone = phone;
+    existingByName.updated_at = now;
+    existingByName.created_teacher = false;
+    map[existingByName.teacher_id] = existingByName;
+    return existingByName;
   }
 
   const teacher = {
@@ -804,9 +877,22 @@ function getOrCreateTeacherInRows(fullName, phone, rows, map, now) {
 }
 
 function normalizeTeacherName(fullName) {
-  const text = String(fullName || '').replace(/\s+/g, ' ').trim();
+  const text = String(fullName || '')
+    .replace(/^ครูผู้สอน\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!text) return 'ครูไม่ระบุชื่อ';
   return text.indexOf('ครู') === 0 ? text : 'ครู ' + text;
+}
+
+function teacherNameKey(fullName) {
+  return String(fullName || '')
+    .replace(/^ครูผู้สอน\s*/i, '')
+    .replace(/^ครู\s*/i, '')
+    .replace(/^(นาย|นาง|นางสาว|เด็กชาย|เด็กหญิง)\s*/i, '')
+    .replace(/\s+/g, '')
+    .trim()
+    .toLowerCase();
 }
 
 function makeTeacherId(fullName) {
@@ -816,6 +902,29 @@ function makeTeacherId(fullName) {
     return ('0' + value.toString(16)).slice(-2);
   }).join('').slice(0, 10).toUpperCase();
   return 'T' + hex;
+}
+
+function getMappedBorrowerId(mapped) {
+  return String(mapped.teacher_id || mapped.borrower_id || mapped.student_id || '').trim();
+}
+
+function normalizeBorrowerType(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return '';
+  if (text === 'teacher' || text === 'ครู') return 'teacher';
+  if (text === 'student' || text === 'นักเรียน') return 'student';
+  return text;
+}
+
+function normalizeTeacherId(value) {
+  const text = String(value || '').trim().toUpperCase();
+  if (!text) return '';
+  if (text === '0') return '';
+  return text;
+}
+
+function looksLikeTeacherId(value) {
+  return /^T[0-9A-Z_-]+$/i.test(String(value || '').trim());
 }
 
 function getTransactionBorrowerType(row) {
