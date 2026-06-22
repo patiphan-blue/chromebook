@@ -21,6 +21,7 @@
       </div>
       <nav class="space-y-2">
         <button class="side-link active" data-scroll-target="dashboardSection">แดชบอร์ด</button>
+        <button class="side-link" data-scroll-target="publicRequestSection">ขอยืมเครื่อง</button>
         <button class="side-link" data-scroll-target="tableSection">ตารางติดตาม</button>
         <button class="side-link" data-scroll-target="adminPanel">เครื่องมือแอดมิน</button>
       </nav>
@@ -57,9 +58,76 @@
           <p>ติดตามสถานะเครื่องของโรงเรียนปายวิทยาคาร แยกนักเรียน ครู เครื่องว่าง และรายการคืนแล้วในหน้าเดียว</p>
         </div>
         <div class="hero-actions">
+          <button class="btn-primary" type="button" data-scroll-target="publicRequestSection">กรอกคำขอยืม</button>
           <button class="btn-secondary" type="button" data-scroll-target="tableSection">ดูตารางติดตาม</button>
-          <button class="btn-primary" type="button" data-scroll-target="adminPanel">เครื่องมือแอดมิน</button>
+          <button class="btn-ghost" type="button" data-scroll-target="adminPanel">เครื่องมือแอดมิน</button>
         </div>
+      </section>
+
+      <section id="publicRequestSection" class="dashboard-panel mb-6 public-request-panel">
+        <div class="request-teaser">
+          <div>
+            <p class="text-sm font-semibold theme-accent">Borrow Request</p>
+            <h2 class="text-xl font-bold">แบบฟอร์มขอยืม Chromebook</h2>
+            <p class="mt-1 text-sm text-stone-600">สำหรับนักเรียนหรือผู้มาติดต่อกรอกคำขอ แอดมินจะตรวจสอบข้อมูลและจัดเครื่องให้ภายหลัง</p>
+          </div>
+          <div class="request-teaser-actions">
+            <span class="badge badge-orange">ส่งคำขอแล้วรอตรวจสอบ</span>
+            <button id="toggleBorrowRequestBtn" class="btn-primary" type="button" aria-expanded="false">เริ่มกรอกคำขอ</button>
+          </div>
+        </div>
+        <form id="borrowRequestForm" class="request-form hidden" aria-hidden="true">
+          <div class="request-grid">
+            <label>
+              <span class="text-sm font-medium">เลขบัตรประชาชน</span>
+              <input id="requestCitizenId" class="input mt-1" inputmode="numeric">
+            </label>
+            <label>
+              <span class="text-sm font-medium">เลขนักเรียน</span>
+              <input id="requestStudentId" class="input mt-1" required>
+            </label>
+            <label class="md:col-span-2">
+              <span class="text-sm font-medium">ชื่อนักเรียน</span>
+              <input id="requestFullName" class="input mt-1" required>
+            </label>
+            <label>
+              <span class="text-sm font-medium">ชั้นห้อง</span>
+              <input id="requestGradeLevel" class="input mt-1" placeholder="เช่น ม.2/7">
+            </label>
+            <label>
+              <span class="text-sm font-medium">เบอร์โทร</span>
+              <input id="requestPhone" class="input mt-1" inputmode="tel">
+            </label>
+            <label>
+              <span class="text-sm font-medium">บ้านเลขที่</span>
+              <input id="requestHouseNo" class="input mt-1">
+            </label>
+            <label>
+              <span class="text-sm font-medium">หมู่</span>
+              <input id="requestVillageNo" class="input mt-1">
+            </label>
+            <label>
+              <span class="text-sm font-medium">ตำบล</span>
+              <input id="requestSubdistrict" class="input mt-1">
+            </label>
+            <label>
+              <span class="text-sm font-medium">อำเภอ</span>
+              <input id="requestDistrict" class="input mt-1">
+            </label>
+            <label>
+              <span class="text-sm font-medium">จังหวัด</span>
+              <input id="requestProvince" class="input mt-1">
+            </label>
+            <label class="md:col-span-2">
+              <span class="text-sm font-medium">หมายเหตุ</span>
+              <input id="requestNote" class="input mt-1" placeholder="เช่น เอกสารครบ / รอผู้ปกครอง">
+            </label>
+          </div>
+          <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p class="text-sm text-stone-600">ข้อมูลจะถูกบันทึกเป็นรายการ “รอตรวจสอบ” ให้แอดมินดำเนินการต่อ</p>
+            <button class="btn-primary" type="submit">ส่งคำขอยืม</button>
+          </div>
+        </form>
       </section>
 
       <section id="dashboardSection" class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -145,6 +213,8 @@
             <div class="flex flex-wrap gap-2">
               <button class="tab-btn active" data-page="assign">ยืมเครื่อง</button>
               <button class="tab-btn" data-page="return">คืนหลายคน</button>
+              <button class="tab-btn" data-page="requests">คำขอยืม</button>
+              <button class="tab-btn" data-page="deviceReport">เครื่องว่าง/พิมพ์</button>
               <button class="tab-btn" data-page="import">นำเข้า Excel</button>
             </div>
           </div>
@@ -268,6 +338,87 @@
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <input id="returnDate" type="date" class="input sm:max-w-56">
               <button id="bulkReturnBtn" class="btn-primary">คืนเครื่องที่เลือก</button>
+            </div>
+          </section>
+
+          <section id="requestsPage" class="admin-page hidden space-y-5">
+              <div id="requestQueueView" class="sub-panel">
+                <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <p class="text-sm font-semibold theme-accent">Request Queue</p>
+                    <h3 class="text-lg font-bold">รายการคำขอยืม</h3>
+                    <p id="borrowRequestMeta" class="mt-1 text-sm text-stone-600">แสดงคำขอล่าสุดสูงสุด 200 รายการ</p>
+                  </div>
+                  <div class="request-toolbar">
+                    <select id="borrowRequestStatusFilter" class="input">
+                      <option value="">ทุกสถานะ</option>
+                      <option value="รอตรวจสอบ">รอตรวจสอบ</option>
+                      <option value="อนุมัติแล้ว">อนุมัติแล้ว</option>
+                      <option value="ปฏิเสธ">ปฏิเสธ</option>
+                      <option value="ยกเลิก">ยกเลิก</option>
+                    </select>
+                    <input id="borrowRequestSearch" class="input" placeholder="ค้นหารหัส / ชื่อ / ห้อง">
+                    <button id="loadBorrowRequestsBtn" class="btn-secondary" type="button">ดึงรายการ</button>
+                  </div>
+                </div>
+                <div class="table-scroll request-table-scroll">
+                  <table class="table request-table">
+                    <thead>
+                      <tr>
+                        <th>สถานะ</th>
+                        <th>เลขนักเรียน</th>
+                        <th>ชื่อ-สกุล</th>
+                        <th>ชั้นห้อง</th>
+                        <th>เบอร์โทร</th>
+                        <th>ที่อยู่</th>
+                        <th>วันที่บันทึก</th>
+                        <th>จัดการ</th>
+                      </tr>
+                    </thead>
+                    <tbody id="borrowRequestTable"></tbody>
+                  </table>
+                </div>
+              </div>
+          </section>
+
+          <section id="deviceReportPage" class="admin-page hidden space-y-4">
+            <div class="sub-panel">
+              <div class="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p class="text-sm font-semibold theme-accent">Available Device Sheet</p>
+                  <h3 class="text-lg font-bold">รายการเครื่องว่างสำหรับจัดแจก</h3>
+                  <p id="deviceReportMeta" class="mt-1 text-sm text-stone-600">โหลดเลขเครื่องที่สถานะ “ว่าง” เพื่อพิมพ์หรือดาวน์โหลด CSV</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button id="loadDeviceReportBtn" class="btn-secondary" type="button">โหลดเครื่องว่าง</button>
+                  <button id="printDeviceReportBtn" class="btn-primary" type="button">พิมพ์</button>
+                  <button id="downloadDeviceReportBtn" class="btn-ghost" type="button">ดาวน์โหลด CSV</button>
+                </div>
+              </div>
+              <div id="deviceReportPrintArea" class="print-sheet">
+                <div class="print-title">
+                  <div>
+                    <h2>โรงเรียนปายวิทยาคาร</h2>
+                    <p>รายการ Chromebook ที่ยังว่างสำหรับจัดแจก</p>
+                  </div>
+                  <span id="deviceReportGeneratedAt">-</span>
+                </div>
+                <div class="table-scroll device-report-scroll">
+                  <table class="table device-report-table">
+                    <thead>
+                      <tr>
+                        <th>ลำดับ</th>
+                        <th>เลขเครื่อง</th>
+                        <th>เลขที่ทรัพย์สิน</th>
+                        <th>สถานะ</th>
+                        <th>จัดให้</th>
+                        <th>หมายเหตุ</th>
+                      </tr>
+                    </thead>
+                    <tbody id="deviceReportTable"></tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </section>
 

@@ -5,6 +5,7 @@ const SHEETS = {
   TEACHERS: 'Teachers',
   CHROMEBOOKS: 'Chromebooks',
   TRANSACTIONS: 'Transactions',
+  BORROW_REQUESTS: 'BorrowRequests',
 };
 
 const STATUS = {
@@ -13,6 +14,10 @@ const STATUS = {
   BORROWING: 'กำลังยืม',
   RETURNED: 'คืนแล้ว',
   REPAIR: 'ส่งซ่อม',
+  REQUEST_PENDING: 'รอตรวจสอบ',
+  REQUEST_APPROVED: 'อนุมัติแล้ว',
+  REQUEST_REJECTED: 'ปฏิเสธ',
+  REQUEST_CANCELLED: 'ยกเลิก',
 };
 
 const HEADERS = {
@@ -41,6 +46,7 @@ const HEADERS = {
   Teachers: ['teacher_id', 'prefix', 'full_name', 'phone', 'created_at', 'updated_at'],
   Chromebooks: ['device_key', 'asset_no', 'device_status', 'current_student_id', 'updated_at'],
   Transactions: ['transaction_id', 'borrower_type', 'borrower_id', 'student_id', 'teacher_id', 'borrower_name', 'device_key', 'borrow_date', 'return_date', 'status', 'note', 'created_at', 'updated_at'],
+  BorrowRequests: ['request_id', 'citizen_id', 'student_id', 'full_name', 'grade_level', 'phone', 'house_no', 'village_no', 'subdistrict', 'district', 'province', 'address', 'request_status', 'note', 'created_at', 'updated_at'],
 };
 
 function doGet(e) {
@@ -72,6 +78,10 @@ function handleRequest(e) {
       importData: () => importBorrowHistory(data),
       listClasses: () => listClasses(),
       listAvailableDevices: () => listAvailableDevices(),
+      listAvailableDeviceReport: () => listAvailableDeviceReport(),
+      createBorrowRequest: () => createBorrowRequest(data),
+      listBorrowRequests: () => listBorrowRequests(data),
+      updateBorrowRequestStatus: () => updateBorrowRequestStatus(data),
     };
 
     if (!routes[action]) {
@@ -143,6 +153,31 @@ function setupDatabase() {
 
   SpreadsheetApp.flush();
   return 'Database setup completed. Default login: admin / admin123';
+}
+
+function upgradeDatabase() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    throw new Error('ไม่พบ Google Sheet ที่ผูกกับ Apps Script กรุณาเปิดจาก Google Sheets > Extensions > Apps Script');
+  }
+
+  Object.keys(HEADERS).forEach(function(sheetName) {
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetName);
+      sheet.getRange(1, 1, 1, HEADERS[sheetName].length).setValues([HEADERS[sheetName]]);
+      sheet.setFrozenRows(1);
+    } else {
+      ensureHeaders(sheet, sheetName);
+    }
+    sheet.getRange(1, 1, 1, sheet.getLastColumn())
+      .setFontWeight('bold')
+      .setBackground('#dbeafe');
+    sheet.autoResizeColumns(1, Math.max(sheet.getLastColumn(), HEADERS[sheetName].length));
+  });
+
+  SpreadsheetApp.flush();
+  return 'Database upgraded safely. Existing data was not cleared.';
 }
 
 function login(data) {
@@ -980,6 +1015,10 @@ function normalizeHeader(value) {
   return String(value || '').replace(/\s+/g, '').toLowerCase();
 }
 
+function normalizeSearchText(value) {
+  return String(value || '').replace(/\s+/g, '').trim().toLowerCase();
+}
+
 function listClasses() {
   const classes = getRows(SHEETS.STUDENTS)
     .map((row) => row.grade_level)
@@ -995,6 +1034,139 @@ function listAvailableDevices() {
   return getRows(SHEETS.CHROMEBOOKS)
     .filter((row) => row.device_status === STATUS.AVAILABLE)
     .map((row) => ({ device_key: row.device_key, asset_no: row.asset_no }));
+}
+
+function listAvailableDeviceReport() {
+  const devices = listAvailableDevices()
+    .sort((a, b) => String(a.device_key).localeCompare(String(b.device_key), 'th', { numeric: true, sensitivity: 'base' }))
+    .map((row, index) => ({
+      no: index + 1,
+      device_key: row.device_key,
+      asset_no: row.asset_no,
+      device_status: STATUS.AVAILABLE,
+      assign_to: '',
+      note: '',
+    }));
+
+  return {
+    generated_at: nowText(),
+    total_available: devices.length,
+    devices,
+  };
+}
+
+function createBorrowRequest(data) {
+  const mapped = mapBorrowRequest(data);
+  if (!mapped.student_id) throw new Error('กรุณาระบุเลขนักเรียน');
+
+  const now = nowText();
+  const student = findRowByValue(SHEETS.STUDENTS, 'student_id', mapped.student_id);
+  const source = student ? student.row : {};
+  if (!mapped.full_name && !source.full_name) throw new Error('กรุณาระบุชื่อนักเรียน');
+  const row = {
+    request_id: Utilities.getUuid(),
+    citizen_id: mapped.citizen_id || source.citizen_id || '',
+    student_id: mapped.student_id,
+    full_name: mapped.full_name || source.full_name || '',
+    grade_level: mapped.grade_level || source.grade_level || '',
+    phone: mapped.phone || source.phone || '',
+    house_no: mapped.house_no || source.house_no || '',
+    village_no: mapped.village_no || source.village_no || '',
+    subdistrict: mapped.subdistrict || source.subdistrict || '',
+    district: mapped.district || source.district || '',
+    province: mapped.province || source.province || '',
+    address: mapped.address || source.address || buildAddress(mapped),
+    request_status: STATUS.REQUEST_PENDING,
+    note: mapped.note || '',
+    created_at: now,
+    updated_at: now,
+  };
+
+  appendObjects(SHEETS.BORROW_REQUESTS, [row]);
+  return { message: 'บันทึกคำขอยืมสำเร็จ', request_id: row.request_id };
+}
+
+function listBorrowRequests(data) {
+  const status = String(data.status || '').trim();
+  const q = normalizeSearchText(data.query || '');
+  const limit = Math.min(Number(data.limit || 200), 500);
+  let rows = getRows(SHEETS.BORROW_REQUESTS)
+    .slice()
+    .reverse();
+
+  if (status) rows = rows.filter((row) => String(row.request_status || '') === status);
+  if (q) {
+    rows = rows.filter((row) => normalizeSearchText([
+      row.citizen_id,
+      row.student_id,
+      row.full_name,
+      row.grade_level,
+      row.phone,
+      row.address,
+      row.request_status,
+      row.note,
+    ].join(' ')).indexOf(q) !== -1);
+  }
+
+  return rows.slice(0, limit);
+}
+
+function updateBorrowRequestStatus(data) {
+  const requestId = required(data.request_id, 'รหัสคำขอ');
+  const status = required(data.request_status || data.status, 'สถานะคำขอ');
+  const allowed = [
+    STATUS.REQUEST_PENDING,
+    STATUS.REQUEST_APPROVED,
+    STATUS.REQUEST_REJECTED,
+    STATUS.REQUEST_CANCELLED,
+  ];
+  if (allowed.indexOf(status) === -1) throw new Error('สถานะคำขอไม่ถูกต้อง');
+
+  const found = findRowByValue(SHEETS.BORROW_REQUESTS, 'request_id', requestId);
+  if (!found) throw new Error('ไม่พบคำขอที่เลือก');
+
+  updateRowByIndex(SHEETS.BORROW_REQUESTS, found.index, {
+    request_status: status,
+    note: data.note !== undefined ? data.note : found.row.note,
+    updated_at: nowText(),
+  });
+
+  return { message: 'อัปเดตสถานะคำขอสำเร็จ', request_id: requestId, request_status: status };
+}
+
+function mapBorrowRequest(data) {
+  const get = makeGetter(data || {});
+  const houseNo = get('house_no', 'บ้านเลขที่', 'เลขที่บ้าน');
+  const villageNo = get('village_no', 'หมู่', 'หมู่บ้าน');
+  const subdistrict = get('subdistrict', 'ตำบล');
+  const district = get('district', 'อำเภอ');
+  const province = get('province', 'จังหวัด');
+  const mapped = {
+    citizen_id: get('citizen_id', 'เลขบัตรประชาชน', 'เลขบัตรประชาชนนักเรียน'),
+    student_id: get('student_id', 'เลขนักเรียน', 'รหัสนักเรียน', 'เลขประจำตัวนักเรียน'),
+    full_name: get('full_name', 'ชื่อนักเรียน', 'ชื่อ-สกุล', 'ชื่อสกุล'),
+    grade_level: get('grade_level', 'ชั้นห้อง', 'ชั้น+ห้อง', 'ระดับชั้น+ห้อง'),
+    phone: get('phone', 'เบอร์โทร', 'เบอร์โทรศัพท์'),
+    house_no: houseNo,
+    village_no: villageNo,
+    subdistrict,
+    district,
+    province,
+    address: get('address', 'ที่อยู่'),
+    note: get('note', 'หมายเหตุ'),
+  };
+  if (!mapped.address) mapped.address = buildAddress(mapped);
+  return mapped;
+}
+
+function buildAddress(row) {
+  return [
+    row.house_no ? 'บ้านเลขที่ ' + row.house_no : '',
+    row.village_no ? 'หมู่ ' + row.village_no : '',
+    row.subdistrict,
+    row.district,
+    row.province,
+  ].filter(Boolean).join(' ');
 }
 
 function getSheet(sheetName) {

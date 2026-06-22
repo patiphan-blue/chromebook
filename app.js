@@ -6,6 +6,8 @@ const state = {
   studentRows: [],
   borrowRows: [],
   availableDevices: [],
+  availableDeviceReport: [],
+  borrowRequests: [],
   assignClassStudents: [],
   assignStudentSearch: '',
   dashboardTables: { students: [], teachers: [], available: [] },
@@ -37,6 +39,9 @@ function bindEvents() {
       if (button.dataset.scrollTarget === 'adminPanel' && !state.admin) {
         openLoginModal();
         return;
+      }
+      if (button.dataset.scrollTarget === 'publicRequestSection') {
+        setBorrowRequestOpen(true);
       }
       document.getElementById(button.dataset.scrollTarget).scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -79,13 +84,39 @@ function bindEvents() {
   document.getElementById('borrowHistoryFile').addEventListener('change', (event) => onExcelSelected(event, 'borrow'));
   document.getElementById('importStudentsBtn').addEventListener('click', onImportStudents);
   document.getElementById('importBorrowBtn').addEventListener('click', onImportBorrowHistory);
-
+  document.getElementById('toggleBorrowRequestBtn').addEventListener('click', () => {
+    const form = document.getElementById('borrowRequestForm');
+    setBorrowRequestOpen(form.classList.contains('hidden'));
+  });
+  document.getElementById('borrowRequestForm').addEventListener('submit', onCreateBorrowRequest);
+  document.getElementById('loadBorrowRequestsBtn').addEventListener('click', loadBorrowRequests);
+  document.getElementById('borrowRequestStatusFilter').addEventListener('change', loadBorrowRequests);
+  document.getElementById('borrowRequestSearch').addEventListener('input', debounce(loadBorrowRequests, 350));
+  document.getElementById('loadDeviceReportBtn').addEventListener('click', loadDeviceReport);
+  document.getElementById('printDeviceReportBtn').addEventListener('click', printDeviceReport);
+  document.getElementById('downloadDeviceReportBtn').addEventListener('click', downloadDeviceReportCsv);
   document.querySelectorAll('.tab-btn').forEach((button) => {
     button.addEventListener('click', () => showAdminPage(button.dataset.page));
   });
   document.querySelectorAll('.assign-mode-btn').forEach((button) => {
     button.addEventListener('click', () => showAssignMode(button.dataset.assignMode));
   });
+}
+
+function setBorrowRequestOpen(isOpen) {
+  const form = document.getElementById('borrowRequestForm');
+  const button = document.getElementById('toggleBorrowRequestBtn');
+  if (!form || !button) return;
+  form.classList.toggle('hidden', !isOpen);
+  form.setAttribute('aria-hidden', String(!isOpen));
+  button.setAttribute('aria-expanded', String(isOpen));
+  button.textContent = isOpen ? 'ซ่อนแบบฟอร์ม' : 'เริ่มกรอกคำขอ';
+  if (isOpen) {
+    window.setTimeout(() => {
+      const firstInput = document.getElementById('requestCitizenId');
+      if (firstInput) firstInput.focus({ preventScroll: true });
+    }, 180);
+  }
 }
 
 function setTodayDefaults() {
@@ -162,6 +193,8 @@ function showAdminPage(page) {
     loadClasses();
     loadAvailableDeviceOptions();
   }
+  if (page === 'requests') loadBorrowRequests();
+  if (page === 'deviceReport') loadDeviceReport();
 }
 
 async function loadPublicDashboard() {
@@ -622,6 +655,194 @@ async function onBulkReturn() {
   }
 }
 
+async function onCreateBorrowRequest(event) {
+  event.preventDefault();
+  const button = event.submitter || document.querySelector('#borrowRequestForm button[type="submit"]');
+  setButtonBusy(button, true, 'กำลังบันทึกคำขอ...');
+  try {
+    const res = await api('createBorrowRequest', {
+      citizen_id: document.getElementById('requestCitizenId').value,
+      student_id: document.getElementById('requestStudentId').value,
+      full_name: document.getElementById('requestFullName').value,
+      grade_level: document.getElementById('requestGradeLevel').value,
+      phone: document.getElementById('requestPhone').value,
+      house_no: document.getElementById('requestHouseNo').value,
+      village_no: document.getElementById('requestVillageNo').value,
+      subdistrict: document.getElementById('requestSubdistrict').value,
+      district: document.getElementById('requestDistrict').value,
+      province: document.getElementById('requestProvince').value,
+      note: document.getElementById('requestNote').value,
+    });
+    toast(res.message || 'บันทึกคำขอสำเร็จ');
+    event.target.reset();
+    setBorrowRequestOpen(false);
+    document.getElementById('publicRequestSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+async function loadBorrowRequests() {
+  const tbody = document.getElementById('borrowRequestTable');
+  const meta = document.getElementById('borrowRequestMeta');
+  if (!tbody) return;
+  setTableLoading('borrowRequestTable', 8, 'กำลังโหลดรายการคำขอยืม...');
+  if (meta) meta.textContent = 'กำลังโหลดคำขอล่าสุด...';
+  try {
+    const rows = await api('listBorrowRequests', {
+      status: document.getElementById('borrowRequestStatusFilter').value,
+      query: document.getElementById('borrowRequestSearch').value,
+      limit: 200,
+    });
+    state.borrowRequests = rows || [];
+    renderBorrowRequests();
+  } catch (error) {
+    toast(error.message, true);
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-slate-500">โหลดรายการคำขอไม่สำเร็จ</td></tr>';
+  }
+}
+
+function renderBorrowRequests() {
+  const tbody = document.getElementById('borrowRequestTable');
+  const meta = document.getElementById('borrowRequestMeta');
+  const rows = state.borrowRequests || [];
+  tbody.innerHTML = '';
+  if (meta) meta.textContent = `แสดง ${rows.length} รายการล่าสุด`;
+
+  rows.forEach((row) => {
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr>
+        <td>${requestStatusBadge(row.request_status)}</td>
+        <td>${escapeHtml(row.student_id || '-')}</td>
+        <td>${escapeHtml(row.full_name || '-')}</td>
+        <td>${escapeHtml(row.grade_level || '-')}</td>
+        <td>${escapeHtml(row.phone || '-')}</td>
+        <td class="request-address">${escapeHtml(row.address || '-')}</td>
+        <td>${escapeHtml(row.created_at || '-')}</td>
+        <td>
+          <select class="input request-status-select" data-request-id="${escapeAttr(row.request_id)}" data-previous-value="${escapeAttr(row.request_status || '')}">
+            ${['รอตรวจสอบ', 'อนุมัติแล้ว', 'ปฏิเสธ', 'ยกเลิก'].map((status) => `
+              <option value="${escapeAttr(status)}"${String(row.request_status || '') === status ? ' selected' : ''}>${escapeHtml(status)}</option>
+            `).join('')}
+          </select>
+        </td>
+      </tr>
+    `);
+  });
+
+  document.querySelectorAll('.request-status-select').forEach((select) => {
+    select.addEventListener('change', () => updateBorrowRequestStatus(select));
+  });
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-slate-500">ยังไม่มีรายการคำขอตามเงื่อนไขนี้</td></tr>';
+  }
+}
+
+async function updateBorrowRequestStatus(select) {
+  const previousText = select.dataset.previousValue || '';
+  select.disabled = true;
+  try {
+    const res = await api('updateBorrowRequestStatus', {
+      request_id: select.dataset.requestId,
+      request_status: select.value,
+    });
+    toast(res.message || 'อัปเดตสถานะคำขอสำเร็จ');
+    select.dataset.previousValue = select.value;
+    loadBorrowRequests();
+  } catch (error) {
+    if (previousText) select.value = previousText;
+    toast(error.message, true);
+  } finally {
+    select.disabled = false;
+  }
+}
+
+async function loadDeviceReport() {
+  const button = document.getElementById('loadDeviceReportBtn');
+  setButtonBusy(button, true, 'กำลังโหลด...');
+  setTableLoading('deviceReportTable', 6, 'กำลังโหลดเครื่องที่ยังว่าง...');
+  try {
+    const report = await api('listAvailableDeviceReport');
+    state.availableDeviceReport = report.devices || [];
+    renderDeviceReport(report);
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+function renderDeviceReport(report = {}) {
+  const rows = report.devices || state.availableDeviceReport || [];
+  const tbody = document.getElementById('deviceReportTable');
+  const meta = document.getElementById('deviceReportMeta');
+  const generated = document.getElementById('deviceReportGeneratedAt');
+  tbody.innerHTML = '';
+  if (meta) meta.textContent = `พบเครื่องว่าง ${rows.length} เครื่อง`;
+  if (generated) generated.textContent = `อัปเดต ${report.generated_at || '-'}`;
+
+  rows.forEach((row, index) => {
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr class="row-ready">
+        <td>${index + 1}</td>
+        <td>${escapeHtml(row.device_key || '-')}</td>
+        <td>${escapeHtml(row.asset_no || '-')}</td>
+        <td>${statusBadge(row.device_status || 'ว่าง')}</td>
+        <td></td>
+        <td></td>
+      </tr>
+    `);
+  });
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-slate-500">ไม่มีเครื่องว่างในระบบ</td></tr>';
+  }
+}
+
+function printDeviceReport() {
+  if (!state.availableDeviceReport.length) {
+    toast('กรุณาโหลดเครื่องว่างก่อนพิมพ์', true);
+    return;
+  }
+  window.print();
+}
+
+function downloadDeviceReportCsv() {
+  const rows = state.availableDeviceReport || [];
+  if (!rows.length) {
+    toast('กรุณาโหลดเครื่องว่างก่อนดาวน์โหลด', true);
+    return;
+  }
+  const csvRows = [
+    ['ลำดับ', 'เลขเครื่อง', 'เลขที่ทรัพย์สิน', 'สถานะ', 'จัดให้', 'หมายเหตุ'],
+    ...rows.map((row, index) => [
+      index + 1,
+      row.device_key || '',
+      row.asset_no || '',
+      row.device_status || 'ว่าง',
+      '',
+      '',
+    ]),
+  ];
+  const csv = csvRows.map((row) => row.map(csvCell).join(',')).join('\r\n');
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `available-chromebooks-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvCell(value) {
+  return `"${String(value ?? '').replaceAll('"', '""')}"`;
+}
+
 async function onExcelSelected(event, type) {
   const file = event.target.files[0];
   if (!file) return;
@@ -904,6 +1125,24 @@ function statusBadge(status) {
         ? 'badge-orange'
         : 'badge-blue';
   return `<span class="badge ${className}">${escapeHtml(text)}</span>`;
+}
+
+function requestStatusBadge(status) {
+  const text = status || 'รอตรวจสอบ';
+  const className = text === 'อนุมัติแล้ว'
+    ? 'badge-green'
+    : text === 'ปฏิเสธ' || text === 'ยกเลิก'
+      ? 'badge-red'
+      : 'badge-orange';
+  return `<span class="badge ${className}">${escapeHtml(text)}</span>`;
+}
+
+function debounce(fn, wait = 250) {
+  let timer = 0;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), wait);
+  };
 }
 
 function toast(message, isError = false) {
