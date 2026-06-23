@@ -46,7 +46,7 @@ const HEADERS = {
   Teachers: ['teacher_id', 'prefix', 'full_name', 'phone', 'created_at', 'updated_at'],
   Chromebooks: ['device_key', 'asset_no', 'device_status', 'current_student_id', 'updated_at'],
   Transactions: ['transaction_id', 'borrower_type', 'borrower_id', 'student_id', 'teacher_id', 'borrower_name', 'device_key', 'borrow_date', 'return_date', 'status', 'note', 'created_at', 'updated_at'],
-  BorrowRequests: ['request_id', 'citizen_id', 'student_id', 'full_name', 'grade_level', 'phone', 'house_no', 'village_no', 'subdistrict', 'district', 'province', 'address', 'request_status', 'note', 'created_at', 'updated_at'],
+  BorrowRequests: ['request_id', 'citizen_id', 'student_id', 'full_name', 'parent_name', 'grade_level', 'phone', 'house_no', 'village_no', 'subdistrict', 'district', 'province', 'address', 'request_status', 'note', 'created_at', 'updated_at'],
 };
 
 function doGet(e) {
@@ -1068,6 +1068,7 @@ function createBorrowRequest(data) {
     citizen_id: mapped.citizen_id || source.citizen_id || '',
     student_id: mapped.student_id,
     full_name: mapped.full_name || source.full_name || '',
+    parent_name: mapped.parent_name || '',
     grade_level: mapped.grade_level || source.grade_level || '',
     phone: mapped.phone || source.phone || '',
     house_no: mapped.house_no || source.house_no || '',
@@ -1100,6 +1101,7 @@ function listBorrowRequests(data) {
       row.citizen_id,
       row.student_id,
       row.full_name,
+      row.parent_name,
       row.grade_level,
       row.phone,
       row.address,
@@ -1145,6 +1147,7 @@ function mapBorrowRequest(data) {
     citizen_id: get('citizen_id', 'เลขบัตรประชาชน', 'เลขบัตรประชาชนนักเรียน'),
     student_id: get('student_id', 'เลขนักเรียน', 'รหัสนักเรียน', 'เลขประจำตัวนักเรียน'),
     full_name: get('full_name', 'ชื่อนักเรียน', 'ชื่อ-สกุล', 'ชื่อสกุล'),
+    parent_name: get('parent_name', 'ชื่อผู้ปกครอง', 'ผู้ปกครอง', 'parent'),
     grade_level: get('grade_level', 'ชั้นห้อง', 'ชั้น+ห้อง', 'ระดับชั้น+ห้อง'),
     phone: get('phone', 'เบอร์โทร', 'เบอร์โทรศัพท์'),
     house_no: houseNo,

@@ -735,6 +735,7 @@ async function onCreateBorrowRequest(event) {
       citizen_id: document.getElementById('requestCitizenId').value,
       student_id: document.getElementById('requestStudentId').value,
       full_name: document.getElementById('requestFullName').value,
+      parent_name: document.getElementById('requestParentName').value,
       grade_level: document.getElementById('requestGradeLevel').value,
       phone: document.getElementById('requestPhone').value,
       house_no: document.getElementById('requestHouseNo').value,
@@ -771,7 +772,7 @@ async function loadBorrowRequests() {
     renderBorrowRequests();
   } catch (error) {
     toast(error.message, true);
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-slate-500">โหลดรายการคำขอไม่สำเร็จ</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-slate-500">โหลดรายการคำขอไม่สำเร็จ</td></tr>';
   }
 }
 
@@ -788,6 +789,7 @@ function renderBorrowRequests() {
         <td>${requestStatusBadge(row.request_status)}</td>
         <td>${escapeHtml(row.student_id || '-')}</td>
         <td>${escapeHtml(row.full_name || '-')}</td>
+        <td>${escapeHtml(row.parent_name || '-')}</td>
         <td>${escapeHtml(row.grade_level || '-')}</td>
         <td>${escapeHtml(row.phone || '-')}</td>
         <td class="request-address">${escapeHtml(row.address || '-')}</td>
@@ -808,7 +810,7 @@ function renderBorrowRequests() {
   });
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-slate-500">ยังไม่มีรายการคำขอตามเงื่อนไขนี้</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-slate-500">ยังไม่มีรายการคำขอตามเงื่อนไขนี้</td></tr>';
   }
 }
 

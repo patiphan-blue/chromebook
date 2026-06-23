@@ -537,7 +537,7 @@ select:focus-visible {
 }
 
 .request-table {
-  min-width: 980px;
+  min-width: 1080px;
 }
 
 .request-table th:nth-child(6),
