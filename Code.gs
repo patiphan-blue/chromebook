@@ -70,6 +70,8 @@ function handleRequest(e) {
       dashboardTables: () => getDashboardTables(),
       assignDevice: () => assignDevice(data),
       bulkAssignDevices: () => bulkAssignDevices(data),
+      validateBulkLoans: () => validateBulkLoans(data),
+      importBulkLoans: () => importBulkLoans(data),
       getStudentsByClass: () => getStudentsByClass(data),
       getBorrowersByClass: () => getBorrowersByClass(data),
       bulkReturn: () => bulkReturn(data),
@@ -203,27 +205,82 @@ function login(data) {
 }
 
 function getDashboard() {
-  const chromebooks = getRows(SHEETS.CHROMEBOOKS);
-  const transactions = getRows(SHEETS.TRANSACTIONS);
-  const students = getRows(SHEETS.STUDENTS);
-  const active = transactions.filter((row) => isBorrowingStatus(row.status));
+  const lock = LockService.getScriptLock();
+  let hasLock = false;
 
-  const statusCounts = chromebooks.reduce((acc, row) => {
-    const status = row.device_status || 'ไม่ระบุ';
-    acc[status] = (acc[status] || 0) + 1;
-    return acc;
-  }, {});
+  try {
+    hasLock = lock.tryLock(5000);
+    const chromebooks = getRows(SHEETS.CHROMEBOOKS);
+    const transactions = getRows(SHEETS.TRANSACTIONS);
+    const students = getRows(SHEETS.STUDENTS);
+    const active = transactions.filter((row) => isBorrowingStatus(row.status));
+    const syncedDevices = hasLock ? reconcileDeviceRows(chromebooks, transactions) : 0;
+    if (hasLock && syncedDevices > 0) {
+      rewriteObjects(SHEETS.CHROMEBOOKS, chromebooks);
+      SpreadsheetApp.flush();
+    }
 
-  return {
-    total_students: students.length,
-    total_devices: chromebooks.length,
-    available: statusCounts[STATUS.AVAILABLE] || 0,
-    borrowed: (statusCounts[STATUS.BORROWED_DEVICE] || 0) + (statusCounts[STATUS.BORROWING] || 0),
-    repairing: statusCounts[STATUS.REPAIR] || 0,
-    active_transactions: active.length,
-    status_counts: statusCounts,
-    recent_transactions: transactions.slice(-10).reverse(),
-  };
+    const statusCounts = chromebooks.reduce((acc, row) => {
+      const status = row.device_status || 'ไม่ระบุ';
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {});
+
+    return {
+      total_students: students.length,
+      total_devices: chromebooks.length,
+      available: statusCounts[STATUS.AVAILABLE] || 0,
+      borrowed: (statusCounts[STATUS.BORROWED_DEVICE] || 0) + (statusCounts[STATUS.BORROWING] || 0),
+      repairing: statusCounts[STATUS.REPAIR] || 0,
+      active_transactions: active.length,
+      status_counts: statusCounts,
+      synced_devices: hasLock ? syncedDevices : 0,
+      available_devices: chromebooks
+        .filter((row) => row.device_status === STATUS.AVAILABLE)
+        .map((row) => ({ device_key: row.device_key, asset_no: row.asset_no })),
+      recent_transactions: transactions.slice(-10).reverse(),
+    };
+  } finally {
+    if (hasLock) lock.releaseLock();
+  }
+}
+
+function reconcileDeviceRows(chromebooks, transactions) {
+  const activeByDevice = {};
+  transactions.forEach((row) => {
+    const deviceKey = String(row.device_key || '').trim();
+    if (deviceKey && isBorrowingStatus(row.status)) activeByDevice[deviceKey] = row;
+  });
+
+  let changed = 0;
+  chromebooks.forEach((device) => {
+    const deviceKey = String(device.device_key || '').trim();
+    const active = activeByDevice[deviceKey];
+    const currentStatus = String(device.device_status || '').trim();
+    let nextStatus = currentStatus;
+    let nextBorrowerId = device.current_student_id || '';
+
+    if (active && currentStatus !== STATUS.REPAIR) {
+      nextStatus = STATUS.BORROWED_DEVICE;
+      nextBorrowerId = getTransactionBorrowerType(active) === 'teacher'
+        ? active.teacher_id || active.borrower_id || active.student_id || ''
+        : active.student_id || active.borrower_id || '';
+    } else if (!active && (currentStatus === STATUS.BORROWED_DEVICE || currentStatus === STATUS.BORROWING)) {
+      nextStatus = STATUS.AVAILABLE;
+      nextBorrowerId = '';
+    } else if (!active && currentStatus === STATUS.AVAILABLE) {
+      nextBorrowerId = '';
+    }
+
+    if (nextStatus !== currentStatus || String(nextBorrowerId) !== String(device.current_student_id || '')) {
+      device.device_status = nextStatus;
+      device.current_student_id = nextBorrowerId;
+      device.updated_at = nowText();
+      changed++;
+    }
+  });
+
+  return changed;
 }
 
 function getDashboardTables() {
@@ -443,6 +500,156 @@ function bulkAssignDevices(data) {
     skipped_count: skipped,
     errors: errors.slice(0, 20),
   };
+}
+
+function validateBulkLoans(data) {
+  return processBulkLoans(data, false);
+}
+
+function importBulkLoans(data) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    throw new Error('ระบบกำลังบันทึกรายการอื่นอยู่ กรุณาลองใหม่อีกครั้ง');
+  }
+
+  try {
+    return processBulkLoans(data, true);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function processBulkLoans(data, shouldWrite) {
+  const rows = data.rows || [];
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error('ไม่พบรายการยืมสำหรับนำเข้า');
+  }
+  if (rows.length > 500) {
+    throw new Error('นำเข้าได้ไม่เกิน 500 แถวต่อครั้ง');
+  }
+
+  const now = nowText();
+  const studentRows = getRows(SHEETS.STUDENTS);
+  const deviceRows = getRows(SHEETS.CHROMEBOOKS);
+  const txRows = getRows(SHEETS.TRANSACTIONS);
+  const studentsById = indexBy(studentRows, 'student_id');
+  const devicesByKey = indexBy(deviceRows, 'device_key');
+  const activeBorrowerKeys = new Set(txRows
+    .filter((row) => isBorrowingStatus(row.status) && isTransactionDeviceStillBorrowed(row, devicesByKey))
+    .map((row) => getTransactionBorrowerKey(row)));
+  const usedStudentIds = new Set();
+  const usedDeviceKeys = new Set();
+  const results = [];
+  let assigned = 0;
+  let skipped = 0;
+
+  rows.forEach((raw, index) => {
+    const mapped = mapBulkLoanRow(raw, index);
+    const student = studentsById[mapped.student_id];
+    const device = devicesByKey[mapped.device_key];
+    let error = '';
+
+    if (!mapped.student_id) error = 'ไม่พบรหัสนักเรียน';
+    else if (!mapped.device_key) error = 'ไม่พบเลขเครื่อง';
+    else if (!mapped.borrow_date) error = 'วันที่ยืมต้องเป็นรูปแบบ YYYY-MM-DD';
+    else if (usedStudentIds.has(mapped.student_id)) error = 'รหัสนักเรียนซ้ำในไฟล์';
+    else if (usedDeviceKeys.has(mapped.device_key)) error = 'เลขเครื่องซ้ำในไฟล์';
+    else if (!student) error = 'ไม่พบนักเรียนในฐานข้อมูล';
+    else if (!device) error = 'ไม่พบเครื่องในฐานข้อมูล';
+    else if (device.device_status !== STATUS.AVAILABLE) error = 'เครื่องไม่ว่าง';
+    else if (activeBorrowerKeys.has('student:' + mapped.student_id)) error = 'นักเรียนมีรายการยืมค้างอยู่';
+
+    usedStudentIds.add(mapped.student_id);
+    usedDeviceKeys.add(mapped.device_key);
+
+    if (error) {
+      skipped++;
+      results.push({
+        source_row: mapped.source_row,
+        student_id: mapped.student_id,
+        device_key: mapped.device_key,
+        borrow_date: mapped.borrow_date,
+        success: false,
+        message: error,
+      });
+      return;
+    }
+
+    activeBorrowerKeys.add('student:' + mapped.student_id);
+    device.device_status = STATUS.BORROWED_DEVICE;
+    device.current_student_id = mapped.student_id;
+    device.updated_at = now;
+
+    if (shouldWrite) {
+      txRows.push({
+        transaction_id: Utilities.getUuid(),
+        borrower_type: 'student',
+        borrower_id: mapped.student_id,
+        student_id: mapped.student_id,
+        teacher_id: '',
+        borrower_name: student.full_name,
+        device_key: mapped.device_key,
+        borrow_date: mapped.borrow_date,
+        return_date: '',
+        status: STATUS.BORROWING,
+        note: mapped.note || 'นำเข้ารายการยืมจาก Excel',
+        created_at: now,
+        updated_at: now,
+      });
+      assigned++;
+    }
+
+    results.push({
+      source_row: mapped.source_row,
+      student_id: mapped.student_id,
+      full_name: student.full_name || '',
+      grade_level: student.grade_level || '',
+      device_key: mapped.device_key,
+      borrow_date: mapped.borrow_date,
+      success: true,
+      message: shouldWrite ? 'บันทึกแล้ว' : 'พร้อมบันทึก',
+    });
+  });
+
+  if (shouldWrite && assigned > 0) {
+    rewriteObjects(SHEETS.CHROMEBOOKS, deviceRows);
+    rewriteObjects(SHEETS.TRANSACTIONS, txRows);
+    SpreadsheetApp.flush();
+  }
+
+  return {
+    message: shouldWrite ? 'นำเข้ารายการยืมสำเร็จ' : 'ตรวจสอบไฟล์เรียบร้อย',
+    total_count: rows.length,
+    valid_count: results.filter((row) => row.success).length,
+    assigned_count: assigned,
+    skipped_count: skipped,
+    results,
+  };
+}
+
+function mapBulkLoanRow(row, index) {
+  const get = makeGetter(row || {});
+  const sourceRow = Number(row.source_row || row.__source_row || index + 2);
+  return {
+    source_row: sourceRow,
+    student_id: get('student_id', 'รหัสนักเรียน', 'เลขนักเรียน', 'เลขประจำตัวนักเรียน'),
+    device_key: get('device_key', 'เลขเครื่องนิยม', 'เลขเครื่อง', 'หมายเลขเครื่อง', 'Key', 'key'),
+    borrow_date: normalizeBulkLoanDate(getRawValue(row, 'borrow_date', 'วันที่ยืม')),
+    note: get('note', 'หมายเหตุ'),
+  };
+}
+
+function normalizeBulkLoanDate(value) {
+  const text = String(normalizeExcelDate(value) || '').trim() || todayText();
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return '';
+  return text;
 }
 
 function getBorrowersByClass(data) {

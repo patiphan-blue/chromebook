@@ -5,6 +5,8 @@ const state = {
   admin: JSON.parse(localStorage.getItem('chromebook_admin') || 'null'),
   studentRows: [],
   borrowRows: [],
+  bulkLoanRows: [],
+  bulkLoanValidation: [],
   availableDevices: [],
   availableDeviceReport: [],
   borrowRequests: [],
@@ -21,6 +23,9 @@ const state = {
 const STUDENT_ID_KEYS = ['เลขประจำตัวนักเรียน', 'รหัสนักเรียน', 'student_id', 'เลขประจำตัว'];
 const CITIZEN_ID_KEYS = ['เลขบัตรประชาชนนักเรียน', 'เลขบัตรประชาชน', 'citizen_id', 'national_id', 'เลขประจำตัวประชาชน'];
 const PHONE_KEYS = ['เบอร์โทรศัพท์', 'เบอร์โทรศัพท์มือถือ', 'phone', 'โทรศัพท์', 'เบอร์โทร', 'หมายเลขโทรศัพท์', 'โทรศัพท์มือถือ'];
+const DEVICE_KEY_KEYS = ['เลขเครื่องนิยม', 'เลขเครื่อง', 'หมายเลขเครื่อง', 'device_key', 'Key', 'key'];
+const BORROW_DATE_KEYS = ['วันที่ยืม', 'borrow_date'];
+const NOTE_KEYS = ['หมายเหตุ', 'note'];
 
 document.addEventListener('DOMContentLoaded', () => {
   bindEvents();
@@ -107,6 +112,9 @@ function bindEvents() {
   document.getElementById('selectAllReturn').addEventListener('change', toggleAllReturns);
   document.getElementById('studentMasterFile').addEventListener('change', (event) => onExcelSelected(event, 'students'));
   document.getElementById('borrowHistoryFile').addEventListener('change', (event) => onExcelSelected(event, 'borrow'));
+  document.getElementById('bulkLoanFile').addEventListener('change', onBulkLoanFileSelected);
+  document.getElementById('downloadBulkLoanTemplateBtn').addEventListener('click', downloadBulkLoanTemplate);
+  document.getElementById('importBulkLoansBtn').addEventListener('click', onImportBulkLoans);
   document.getElementById('importStudentsBtn').addEventListener('click', onImportStudents);
   document.getElementById('importBorrowBtn').addEventListener('click', onImportBorrowHistory);
   document.getElementById('toggleBorrowRequestBtn').addEventListener('click', () => {
@@ -225,11 +233,11 @@ function showAdminPage(page) {
 async function loadPublicDashboard() {
   renderDashboardLoading();
   try {
-    const [dashboard, tables, availableDevices] = await Promise.all([
+    const [dashboard, tables] = await Promise.all([
       api('dashboard'),
       api('dashboardTables'),
-      api('listAvailableDevices'),
     ]);
+    const availableDevices = dashboard.available_devices || [];
 
     document.getElementById('totalDevices').textContent = dashboard.total_devices || 0;
     document.getElementById('availableDevices').textContent = dashboard.available || 0;
@@ -916,6 +924,200 @@ function csvCell(value) {
   return `"${String(value ?? '').replaceAll('"', '""')}"`;
 }
 
+function downloadBulkLoanTemplate() {
+  const today = new Date().toISOString().slice(0, 10);
+  const workbook = XLSX.utils.book_new();
+  const loanSheet = XLSX.utils.aoa_to_sheet([
+    ['รหัสนักเรียน', 'เลขเครื่องนิยม', 'วันที่ยืม', 'หมายเหตุ'],
+    ['9246', 'CB-001', today, 'ยืมด้วยไฟล์ Excel'],
+    ['9247', 'CB-002', today, ''],
+  ]);
+  loanSheet['!cols'] = [
+    { wch: 18 },
+    { wch: 24 },
+    { wch: 16 },
+    { wch: 34 },
+  ];
+
+  const guideSheet = XLSX.utils.aoa_to_sheet([
+    ['คำแนะนำการกรอกไฟล์'],
+    ['1. แถวที่ 1 ต้องเป็นหัวตาราง และห้ามเปลี่ยนชื่อคอลัมน์'],
+    ['2. เริ่มกรอกข้อมูลตั้งแต่แถวที่ 2 โดยหนึ่งคนต่อหนึ่งแถว'],
+    ['3. รหัสนักเรียนและเลขเครื่องนิยมเป็นข้อมูลจำเป็น'],
+    ['4. ตั้งคอลัมน์รหัสนักเรียนและเลขเครื่องนิยมเป็นรูปแบบข้อความ (Text)'],
+    ['5. วันที่ยืมใช้รูปแบบ YYYY-MM-DD หากเว้นว่างระบบจะใช้วันที่ปัจจุบัน'],
+    ['6. ห้ามใช้เลขนักเรียนหรือเลขเครื่องซ้ำกันในไฟล์เดียวกัน'],
+    ['7. ระบบรับไฟล์ได้ไม่เกิน 500 รายการต่อครั้ง'],
+  ]);
+  guideSheet['!cols'] = [{ wch: 86 }];
+
+  XLSX.utils.book_append_sheet(workbook, loanSheet, 'รายการยืม');
+  XLSX.utils.book_append_sheet(workbook, guideSheet, 'คำแนะนำ');
+  XLSX.writeFile(workbook, `แม่แบบยืมหลายคน-${today}.xlsx`);
+}
+
+async function onBulkLoanFileSelected(event) {
+  const file = event.target.files[0];
+  const importButton = document.getElementById('importBulkLoansBtn');
+  const summary = document.getElementById('bulkLoanSummary');
+  importButton.disabled = true;
+  state.bulkLoanRows = [];
+  state.bulkLoanValidation = [];
+  if (!file) {
+    summary.textContent = 'ยังไม่ได้เลือกไฟล์';
+    renderBulkLoanPreview([]);
+    return;
+  }
+
+  summary.textContent = 'กำลังอ่านและตรวจสอบไฟล์...';
+  try {
+    const rawRows = await readBulkLoanWorkbook(file);
+    if (!rawRows.length) throw new Error('ไม่พบหัวตารางหรือข้อมูลในไฟล์');
+    if (rawRows.length > 500) throw new Error('ไฟล์มีเกิน 500 แถว กรุณาแบ่งเป็นหลายไฟล์');
+
+    state.bulkLoanRows = prepareBulkLoanRows(rawRows);
+    const clientInvalid = state.bulkLoanRows.filter((row) => row.client_error);
+    const candidates = state.bulkLoanRows.filter((row) => !row.client_error);
+    const serverResult = candidates.length
+      ? await api('validateBulkLoans', { rows: candidates })
+      : { results: [] };
+    const validationByRow = new Map((serverResult.results || []).map((row) => [Number(row.source_row), row]));
+
+    state.bulkLoanValidation = state.bulkLoanRows.map((row) => {
+      if (row.client_error) {
+        return Object.assign({}, row, { success: false, message: row.client_error });
+      }
+      return validationByRow.get(Number(row.source_row)) || Object.assign({}, row, {
+        success: false,
+        message: 'ตรวจสอบแถวนี้ไม่สำเร็จ',
+      });
+    });
+
+    renderBulkLoanPreview(state.bulkLoanValidation);
+    const validCount = state.bulkLoanValidation.filter((row) => row.success).length;
+    const invalidCount = clientInvalid.length + (serverResult.skipped_count || 0);
+    summary.textContent = `ทั้งหมด ${rawRows.length} แถว · พร้อมบันทึก ${validCount} · ต้องแก้ไข ${invalidCount}`;
+    importButton.disabled = validCount === 0;
+    toast(`ตรวจไฟล์แล้ว: พร้อมบันทึก ${validCount} แถว, ต้องแก้ไข ${invalidCount} แถว`);
+  } catch (error) {
+    summary.textContent = error.message;
+    renderBulkLoanPreview([]);
+    toast(error.message, true);
+  }
+}
+
+async function readBulkLoanWorkbook(file) {
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  return sheetToObjects(sheet, true);
+}
+
+function prepareBulkLoanRows(rawRows) {
+  const rows = rawRows.map((row, index) => ({
+    source_row: Number(row.__source_row || index + 2),
+    student_id: pickValue(row, STUDENT_ID_KEYS),
+    device_key: pickValue(row, DEVICE_KEY_KEYS),
+    borrow_date: normalizeBulkLoanDateValue(pickValue(row, BORROW_DATE_KEYS)),
+    note: pickValue(row, NOTE_KEYS),
+  }));
+  const studentCounts = countValues(rows.map((row) => row.student_id));
+  const deviceCounts = countValues(rows.map((row) => row.device_key));
+
+  return rows.map((row) => {
+    let error = '';
+    if (!row.student_id) error = 'ไม่พบรหัสนักเรียน';
+    else if (!row.device_key) error = 'ไม่พบเลขเครื่อง';
+    else if (!row.borrow_date) error = 'วันที่ยืมไม่ถูกต้อง';
+    else if (studentCounts.get(row.student_id) > 1) error = 'รหัสนักเรียนซ้ำในไฟล์';
+    else if (deviceCounts.get(row.device_key) > 1) error = 'เลขเครื่องซ้ำในไฟล์';
+    return Object.assign(row, { client_error: error });
+  });
+}
+
+function countValues(values) {
+  const counts = new Map();
+  values.filter(Boolean).forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
+  return counts;
+}
+
+function normalizeBulkLoanDateValue(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  const text = String(value || '').trim();
+  if (!text) return new Date().toISOString().slice(0, 10);
+
+  let match = text.match(/^(\d{4})[-/]([01]?\d)[-/]([0-3]?\d)$/);
+  if (match) return formatValidDateParts(Number(match[1]), Number(match[2]), Number(match[3]));
+
+  match = text.match(/^([0-3]?\d)[-/]([01]?\d)[-/](\d{4})$/);
+  if (!match) return '';
+  let year = Number(match[3]);
+  if (year > 2400) year -= 543;
+  return formatValidDateParts(year, Number(match[2]), Number(match[1]));
+}
+
+function formatValidDateParts(year, month, day) {
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return '';
+  return [year, String(month).padStart(2, '0'), String(day).padStart(2, '0')].join('-');
+}
+
+function renderBulkLoanPreview(rows) {
+  const body = document.getElementById('bulkLoanPreviewBody');
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="7" class="text-center text-slate-500">ดาวน์โหลดไฟล์ตัวอย่างหรือเลือกไฟล์ Excel เพื่อเริ่มตรวจสอบ</td></tr>';
+    return;
+  }
+
+  body.innerHTML = rows.map((row) => `
+    <tr class="${row.success ? 'row-ready' : 'row-invalid'}">
+      <td>${escapeHtml(row.source_row || '-')}</td>
+      <td>${escapeHtml(row.student_id || '-')}</td>
+      <td>${escapeHtml(row.full_name || '-')}</td>
+      <td>${escapeHtml(row.grade_level || '-')}</td>
+      <td>${escapeHtml(row.device_key || '-')}</td>
+      <td>${escapeHtml(row.borrow_date || '-')}</td>
+      <td><span class="badge ${row.success ? 'badge-green' : 'badge-red'}">${escapeHtml(row.message || '-')}</span></td>
+    </tr>
+  `).join('');
+}
+
+async function onImportBulkLoans() {
+  const validRows = state.bulkLoanValidation.filter((row) => row.success).map((row) => ({
+    source_row: row.source_row,
+    student_id: row.student_id,
+    device_key: row.device_key,
+    borrow_date: row.borrow_date,
+    note: state.bulkLoanRows.find((source) => Number(source.source_row) === Number(row.source_row))?.note || '',
+  }));
+  if (!validRows.length) {
+    toast('ไม่มีรายการที่พร้อมบันทึก', true);
+    return;
+  }
+  if (!window.confirm(`ยืนยันบันทึกรายการยืม ${validRows.length} รายการหรือไม่`)) return;
+
+  const button = document.getElementById('importBulkLoansBtn');
+  let completed = false;
+  setButtonBusy(button, true, 'กำลังบันทึก...');
+  try {
+    const result = await api('importBulkLoans', { rows: validRows });
+    const importedByRow = new Map((result.results || []).map((row) => [Number(row.source_row), row]));
+    state.bulkLoanValidation = state.bulkLoanValidation.map((row) => importedByRow.get(Number(row.source_row)) || row);
+    renderBulkLoanPreview(state.bulkLoanValidation);
+    document.getElementById('bulkLoanSummary').textContent = `บันทึกแล้ว ${result.assigned_count || 0} · ข้าม ${result.skipped_count || 0}`;
+    document.getElementById('bulkLoanFile').value = '';
+    completed = true;
+    toast(`บันทึกรายการยืมสำเร็จ ${result.assigned_count || 0} รายการ, ข้าม ${result.skipped_count || 0} รายการ`);
+    loadPublicDashboard();
+    loadAvailableDeviceOptions();
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setButtonBusy(button, false);
+    button.disabled = completed;
+  }
+}
+
 async function onExcelSelected(event, type) {
   const file = event.target.files[0];
   if (!file) return;
@@ -949,7 +1151,7 @@ async function readStudentWorkbook(file) {
   return mergePhoneRows(mainRows, phoneRows);
 }
 
-function sheetToObjects(sheet) {
+function sheetToObjects(sheet, includeSourceRow = false) {
   const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
   const headerIndex = detectHeaderRow(matrix);
   if (headerIndex < 0) return [];
@@ -957,13 +1159,14 @@ function sheetToObjects(sheet) {
   const headers = matrix[headerIndex].map((value) => String(value || '').trim());
   return matrix.slice(headerIndex + 1)
     .filter((row) => row.some((cell) => String(cell || '').trim() !== ''))
-    .map((row) => {
+    .map((row, rowIndex) => {
       const obj = {};
       headers.forEach((header, index) => {
         if (!header) return;
         const key = obj[header] === undefined ? header : `${header}_${index}`;
         obj[key] = row[index] ?? '';
       });
+      if (includeSourceRow) obj.__source_row = headerIndex + rowIndex + 2;
       return obj;
     });
 }

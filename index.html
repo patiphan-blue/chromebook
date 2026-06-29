@@ -448,6 +448,66 @@
           </section>
 
           <section id="importPage" class="admin-page hidden space-y-4">
+            <section class="bulk-import-workspace" aria-labelledby="bulkLoanImportTitle">
+              <div class="bulk-import-heading">
+                <div>
+                  <p class="text-sm font-semibold theme-accent">ยืมหลายคนพร้อมกัน</p>
+                  <h3 id="bulkLoanImportTitle" class="text-lg font-bold">นำเข้ารายการยืมด้วย Excel</h3>
+                  <p class="mt-1 text-sm text-stone-600">ระบบจะตรวจนักเรียน เครื่องว่าง และข้อมูลซ้ำก่อนบันทึก โดยไม่สร้างเครื่องใหม่หรือเขียนทับรายการเดิม</p>
+                </div>
+                <button id="downloadBulkLoanTemplateBtn" class="btn-secondary" type="button">ดาวน์โหลดไฟล์ตัวอย่าง</button>
+              </div>
+
+              <div class="bulk-import-layout">
+                <ol class="import-steps" aria-label="ขั้นตอนนำเข้ารายการยืม">
+                  <li>
+                    <strong>เตรียมไฟล์</strong>
+                    <span>ใช้แถวแรกเป็นหัวตาราง: รหัสนักเรียน, เลขเครื่องนิยม, วันที่ยืม, หมายเหตุ และตั้ง 2 คอลัมน์แรกเป็น Text</span>
+                  </li>
+                  <li>
+                    <strong>หนึ่งคนต่อหนึ่งแถว</strong>
+                    <span>ห้ามรวมเซลล์ ห้ามใส่หัวข้ออื่นเหนือหัวตาราง และไม่ควรมีแถวว่างคั่นกลาง</span>
+                  </li>
+                  <li>
+                    <strong>ตรวจแล้วจึงบันทึก</strong>
+                    <span>เลือกรายการที่ขึ้นว่า “พร้อมบันทึก” ระบบจะข้ามแถวที่ข้อมูลไม่ถูกต้อง</span>
+                  </li>
+                </ol>
+
+                <div class="bulk-import-controls">
+                  <label for="bulkLoanFile" class="text-sm font-bold">เลือกไฟล์รายการยืม</label>
+                  <input id="bulkLoanFile" type="file" accept=".xlsx,.xls,.csv" class="input">
+                  <div class="bulk-import-actions">
+                    <span id="bulkLoanSummary" class="bulk-import-summary" aria-live="polite">ยังไม่ได้เลือกไฟล์</span>
+                    <button id="importBulkLoansBtn" class="btn-primary" type="button" disabled>บันทึกรายการที่ผ่าน</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="table-scroll bulk-loan-preview">
+                <table class="table bulk-loan-table">
+                  <thead>
+                    <tr>
+                      <th>แถว</th>
+                      <th>รหัสนักเรียน</th>
+                      <th>ชื่อ-สกุล</th>
+                      <th>ชั้น+ห้อง</th>
+                      <th>เลขเครื่อง</th>
+                      <th>วันที่ยืม</th>
+                      <th>ผลตรวจสอบ</th>
+                    </tr>
+                  </thead>
+                  <tbody id="bulkLoanPreviewBody">
+                    <tr><td colspan="7" class="text-center text-slate-500">ดาวน์โหลดไฟล์ตัวอย่างหรือเลือกไฟล์ Excel เพื่อเริ่มตรวจสอบ</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <div class="import-secondary-heading">
+              <h3 class="font-bold">เครื่องมือนำเข้าฐานข้อมูล</h3>
+              <p class="text-sm text-stone-600">ใช้สำหรับตั้งค่าฐานนักเรียนหรือย้ายยอดยืมเดิมเข้าระบบ</p>
+            </div>
             <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <article class="sub-panel">
                 <div class="mb-3 flex items-start justify-between gap-3">

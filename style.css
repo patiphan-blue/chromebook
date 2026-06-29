@@ -491,6 +491,125 @@ select:focus-visible {
   gap: 1rem;
 }
 
+.bulk-import-workspace {
+  overflow: hidden;
+  border: 1px solid rgba(185, 28, 28, 0.22);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.bulk-import-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border-bottom: 1px solid rgba(185, 28, 28, 0.16);
+  background: var(--surface-tint);
+}
+
+.bulk-import-heading p:last-child {
+  max-width: 72ch;
+}
+
+.bulk-import-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.import-steps {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: import-step;
+}
+
+.import-steps li {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  column-gap: 0.7rem;
+  counter-increment: import-step;
+}
+
+.import-steps li::before {
+  content: counter(import-step);
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--school-red-soft);
+  color: var(--school-red-dark);
+  font-weight: 950;
+}
+
+.import-steps strong,
+.import-steps span {
+  grid-column: 2;
+}
+
+.import-steps strong {
+  color: #27272a;
+}
+
+.import-steps span {
+  margin-top: 0.1rem;
+  color: #52525b;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.bulk-import-controls {
+  align-self: start;
+  padding: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f9fafb;
+}
+
+.bulk-import-controls .input {
+  margin-top: 0.45rem;
+}
+
+.bulk-import-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.bulk-import-summary {
+  color: #3f3f46;
+  font-size: 0.875rem;
+  font-weight: 750;
+}
+
+.bulk-loan-preview {
+  max-height: 460px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+
+.bulk-loan-table {
+  min-width: 940px;
+}
+
+.bulk-loan-table th:first-child,
+.bulk-loan-table td:first-child {
+  width: 4rem;
+  text-align: center;
+}
+
+.import-secondary-heading {
+  padding-top: 0.25rem;
+}
+
 .request-teaser {
   display: flex;
   align-items: center;
@@ -914,6 +1033,14 @@ select:focus-visible {
   background: rgba(254, 202, 202, 0.95);
 }
 
+.table tbody tr.row-invalid {
+  background: rgba(254, 226, 226, 0.54);
+}
+
+.table tbody tr.row-invalid:hover {
+  background: rgba(254, 202, 202, 0.82);
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -1033,6 +1160,10 @@ select:focus-visible {
   .request-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .bulk-import-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 1200px) {
@@ -1116,6 +1247,12 @@ select:focus-visible {
   }
 
   .print-title {
+    flex-direction: column;
+  }
+
+  .bulk-import-heading,
+  .bulk-import-actions {
+    align-items: stretch;
     flex-direction: column;
   }
 }
