@@ -205,43 +205,56 @@ function login(data) {
 }
 
 function getDashboard() {
+  const inventory = getSynchronizedInventory(10000);
+  const chromebooks = inventory.chromebooks;
+  const transactions = inventory.transactions;
+  const students = getRows(SHEETS.STUDENTS);
+  const active = transactions.filter((row) => isBorrowingStatus(row.status));
+
+  const statusCounts = chromebooks.reduce((acc, row) => {
+    const status = normalizeDeviceStatus(row.device_status) || 'ไม่ระบุ';
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    total_students: students.length,
+    total_devices: chromebooks.length,
+    available: statusCounts[STATUS.AVAILABLE] || 0,
+    borrowed: (statusCounts[STATUS.BORROWED_DEVICE] || 0) + (statusCounts[STATUS.BORROWING] || 0),
+    repairing: statusCounts[STATUS.REPAIR] || 0,
+    active_transactions: active.length,
+    status_counts: statusCounts,
+    synced_devices: inventory.synced_devices,
+    available_devices: chromebooks
+      .filter((row) => normalizeDeviceStatus(row.device_status) === STATUS.AVAILABLE)
+      .map((row) => ({ device_key: row.device_key, asset_no: row.asset_no })),
+    recent_transactions: transactions.slice(-10).reverse(),
+  };
+}
+
+function getSynchronizedInventory(waitMs) {
   const lock = LockService.getScriptLock();
-  let hasLock = false;
+  if (!lock.tryLock(waitMs || 10000)) {
+    throw new Error('ระบบกำลังอัปเดตสถานะเครื่อง กรุณาลองใหม่อีกครั้ง');
+  }
 
   try {
-    hasLock = lock.tryLock(5000);
     const chromebooks = getRows(SHEETS.CHROMEBOOKS);
     const transactions = getRows(SHEETS.TRANSACTIONS);
-    const students = getRows(SHEETS.STUDENTS);
-    const active = transactions.filter((row) => isBorrowingStatus(row.status));
-    const syncedDevices = hasLock ? reconcileDeviceRows(chromebooks, transactions) : 0;
-    if (hasLock && syncedDevices > 0) {
+    const syncedDevices = reconcileDeviceRows(chromebooks, transactions);
+    if (syncedDevices > 0) {
       rewriteObjects(SHEETS.CHROMEBOOKS, chromebooks);
       SpreadsheetApp.flush();
     }
 
-    const statusCounts = chromebooks.reduce((acc, row) => {
-      const status = normalizeDeviceStatus(row.device_status) || 'ไม่ระบุ';
-      acc[status] = (acc[status] || 0) + 1;
-      return acc;
-    }, {});
-
     return {
-      total_students: students.length,
-      total_devices: chromebooks.length,
-      available: statusCounts[STATUS.AVAILABLE] || 0,
-      borrowed: (statusCounts[STATUS.BORROWED_DEVICE] || 0) + (statusCounts[STATUS.BORROWING] || 0),
-      repairing: statusCounts[STATUS.REPAIR] || 0,
-      active_transactions: active.length,
-      status_counts: statusCounts,
-      synced_devices: hasLock ? syncedDevices : 0,
-      available_devices: chromebooks
-        .filter((row) => normalizeDeviceStatus(row.device_status) === STATUS.AVAILABLE)
-        .map((row) => ({ device_key: row.device_key, asset_no: row.asset_no })),
-      recent_transactions: transactions.slice(-10).reverse(),
+      chromebooks,
+      transactions,
+      synced_devices: syncedDevices,
     };
   } finally {
-    if (hasLock) lock.releaseLock();
+    lock.releaseLock();
   }
 }
 
@@ -1257,7 +1270,7 @@ function listClasses() {
 }
 
 function listAvailableDevices() {
-  return getRows(SHEETS.CHROMEBOOKS)
+  return getSynchronizedInventory(10000).chromebooks
     .filter((row) => normalizeDeviceStatus(row.device_status) === STATUS.AVAILABLE)
     .map((row) => ({ device_key: row.device_key, asset_no: row.asset_no }));
 }

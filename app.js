@@ -127,7 +127,7 @@ function bindEvents() {
   document.getElementById('borrowRequestSearch').addEventListener('input', debounce(loadBorrowRequests, 350));
   document.getElementById('loadDeviceReportBtn').addEventListener('click', loadDeviceReport);
   document.getElementById('printDeviceReportBtn').addEventListener('click', printDeviceReport);
-  document.getElementById('downloadDeviceReportBtn').addEventListener('click', downloadDeviceReportCsv);
+  document.getElementById('downloadDeviceReportBtn').addEventListener('click', downloadDeviceReportExcel);
   document.querySelectorAll('.tab-btn').forEach((button) => {
     button.addEventListener('click', () => showAdminPage(button.dataset.page));
   });
@@ -846,14 +846,19 @@ async function loadDeviceReport() {
   setButtonBusy(button, true, 'กำลังโหลด...');
   setTableLoading('deviceReportTable', 6, 'กำลังโหลดเครื่องที่ยังว่าง...');
   try {
-    const report = await api('listAvailableDeviceReport');
-    state.availableDeviceReport = report.devices || [];
-    renderDeviceReport(report);
+    await fetchLatestDeviceReport();
   } catch (error) {
     toast(error.message, true);
   } finally {
     setButtonBusy(button, false);
   }
+}
+
+async function fetchLatestDeviceReport() {
+  const report = await api('listAvailableDeviceReport');
+  state.availableDeviceReport = report.devices || [];
+  renderDeviceReport(report);
+  return report;
 }
 
 function renderDeviceReport(report = {}) {
@@ -883,45 +888,63 @@ function renderDeviceReport(report = {}) {
   }
 }
 
-function printDeviceReport() {
-  if (!state.availableDeviceReport.length) {
-    toast('กรุณาโหลดเครื่องว่างก่อนพิมพ์', true);
-    return;
+async function printDeviceReport() {
+  const button = document.getElementById('printDeviceReportBtn');
+  setButtonBusy(button, true, 'กำลังเตรียม...');
+  try {
+    const report = await fetchLatestDeviceReport();
+    if (!report.devices?.length) {
+      toast('ไม่มีเครื่องว่างสำหรับพิมพ์', true);
+      return;
+    }
+    window.print();
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setButtonBusy(button, false);
   }
-  window.print();
 }
 
-function downloadDeviceReportCsv() {
-  const rows = state.availableDeviceReport || [];
-  if (!rows.length) {
-    toast('กรุณาโหลดเครื่องว่างก่อนดาวน์โหลด', true);
-    return;
-  }
-  const csvRows = [
-    ['ลำดับ', 'เลขเครื่อง', 'เลขที่ทรัพย์สิน', 'สถานะ', 'จัดให้', 'หมายเหตุ'],
-    ...rows.map((row, index) => [
-      index + 1,
-      row.device_key || '',
-      row.asset_no || '',
-      row.device_status || 'ว่าง',
-      '',
-      '',
-    ]),
-  ];
-  const csv = csvRows.map((row) => row.map(csvCell).join(',')).join('\r\n');
-  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `available-chromebooks-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
+async function downloadDeviceReportExcel() {
+  const button = document.getElementById('downloadDeviceReportBtn');
+  setButtonBusy(button, true, 'กำลังสร้าง Excel...');
+  try {
+    const report = await fetchLatestDeviceReport();
+    const rows = report.devices || [];
+    if (!rows.length) {
+      toast('ไม่มีเครื่องว่างสำหรับดาวน์โหลด', true);
+      return;
+    }
 
-function csvCell(value) {
-  return `"${String(value ?? '').replaceAll('"', '""')}"`;
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ['ลำดับ', 'เลขเครื่อง', 'เลขที่ทรัพย์สิน', 'สถานะ', 'จัดให้', 'หมายเหตุ'],
+      ...rows.map((row, index) => [
+        index + 1,
+        row.device_key || '',
+        row.asset_no || '',
+        row.device_status || 'ว่าง',
+        '',
+        '',
+      ]),
+    ]);
+    worksheet['!cols'] = [
+      { wch: 9 },
+      { wch: 28 },
+      { wch: 28 },
+      { wch: 12 },
+      { wch: 24 },
+      { wch: 30 },
+    ];
+    worksheet['!autofilter'] = { ref: `A1:F${rows.length + 1}` };
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'เครื่องว่าง');
+    XLSX.writeFile(workbook, `เครื่องว่าง-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast(`ดาวน์โหลดเครื่องว่างล่าสุด ${rows.length} เครื่องแล้ว`);
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    setButtonBusy(button, false);
+  }
 }
 
 function downloadBulkLoanTemplate() {
