@@ -221,7 +221,7 @@ function getDashboard() {
     }
 
     const statusCounts = chromebooks.reduce((acc, row) => {
-      const status = row.device_status || 'ไม่ระบุ';
+      const status = normalizeDeviceStatus(row.device_status) || 'ไม่ระบุ';
       acc[status] = (acc[status] || 0) + 1;
       return acc;
     }, {});
@@ -236,7 +236,7 @@ function getDashboard() {
       status_counts: statusCounts,
       synced_devices: hasLock ? syncedDevices : 0,
       available_devices: chromebooks
-        .filter((row) => row.device_status === STATUS.AVAILABLE)
+        .filter((row) => normalizeDeviceStatus(row.device_status) === STATUS.AVAILABLE)
         .map((row) => ({ device_key: row.device_key, asset_no: row.asset_no })),
       recent_transactions: transactions.slice(-10).reverse(),
     };
@@ -256,7 +256,8 @@ function reconcileDeviceRows(chromebooks, transactions) {
   chromebooks.forEach((device) => {
     const deviceKey = String(device.device_key || '').trim();
     const active = activeByDevice[deviceKey];
-    const currentStatus = String(device.device_status || '').trim();
+    const rawStatus = String(device.device_status || '').trim();
+    const currentStatus = normalizeDeviceStatus(rawStatus);
     let nextStatus = currentStatus;
     let nextBorrowerId = device.current_student_id || '';
 
@@ -272,7 +273,7 @@ function reconcileDeviceRows(chromebooks, transactions) {
       nextBorrowerId = '';
     }
 
-    if (nextStatus !== currentStatus || String(nextBorrowerId) !== String(device.current_student_id || '')) {
+    if (nextStatus !== rawStatus || String(nextBorrowerId) !== String(device.current_student_id || '')) {
       device.device_status = nextStatus;
       device.current_student_id = nextBorrowerId;
       device.updated_at = nowText();
@@ -358,8 +359,9 @@ function assignDevice(data) {
 
   const device = findRowByValue(SHEETS.CHROMEBOOKS, 'device_key', deviceKey);
   if (!device) throw new Error('ไม่พบ Chromebook เลขเครื่อง ' + deviceKey);
-  if (device.row.device_status === STATUS.REPAIR) throw new Error('เครื่องนี้อยู่ระหว่างส่งซ่อม');
-  if (device.row.device_status === STATUS.BORROWED_DEVICE || device.row.device_status === STATUS.BORROWING) {
+  const deviceStatus = normalizeDeviceStatus(device.row.device_status);
+  if (deviceStatus === STATUS.REPAIR) throw new Error('เครื่องนี้อยู่ระหว่างส่งซ่อม');
+  if (deviceStatus === STATUS.BORROWED_DEVICE || deviceStatus === STATUS.BORROWING) {
     throw new Error('เครื่องนี้ถูกยืมอยู่แล้ว');
   }
 
@@ -457,7 +459,7 @@ function bulkAssignDevices(data) {
       errors.push(deviceKey + ': ไม่พบเครื่อง');
       return;
     }
-    if (device.device_status !== STATUS.AVAILABLE || usedDevices.has(deviceKey)) {
+    if (normalizeDeviceStatus(device.device_status) !== STATUS.AVAILABLE || usedDevices.has(deviceKey)) {
       skipped++;
       errors.push(deviceKey + ': เครื่องไม่ว่าง');
       return;
@@ -556,7 +558,7 @@ function processBulkLoans(data, shouldWrite) {
     else if (usedDeviceKeys.has(mapped.device_key)) error = 'เลขเครื่องซ้ำในไฟล์';
     else if (!student) error = 'ไม่พบนักเรียนในฐานข้อมูล';
     else if (!device) error = 'ไม่พบเครื่องในฐานข้อมูล';
-    else if (device.device_status !== STATUS.AVAILABLE) error = 'เครื่องไม่ว่าง';
+    else if (normalizeDeviceStatus(device.device_status) !== STATUS.AVAILABLE) error = 'เครื่องไม่ว่าง';
     else if (activeBorrowerKeys.has('student:' + mapped.student_id)) error = 'นักเรียนมีรายการยืมค้างอยู่';
 
     usedStudentIds.add(mapped.student_id);
@@ -1184,10 +1186,27 @@ function isBorrowingStatus(status) {
   return String(status || '').trim() === STATUS.BORROWING;
 }
 
+function normalizeDeviceStatus(status) {
+  const text = String(status || '')
+    .normalize('NFC')
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/([\u0E47-\u0E4E])\1+/g, '$1');
+  const knownStatuses = [
+    STATUS.AVAILABLE,
+    STATUS.BORROWED_DEVICE,
+    STATUS.BORROWING,
+    STATUS.REPAIR,
+  ];
+  const matched = knownStatuses.find((value) => text === String(value).replace(/\s+/g, ''));
+  return matched || text;
+}
+
 function isTransactionDeviceStillBorrowed(row, devicesByKey) {
   const device = devicesByKey[row.device_key];
   if (!device) return false;
-  return device.device_status === STATUS.BORROWED_DEVICE || device.device_status === STATUS.BORROWING;
+  const status = normalizeDeviceStatus(device.device_status);
+  return status === STATUS.BORROWED_DEVICE || status === STATUS.BORROWING;
 }
 
 function rowToObject(headers, row) {
@@ -1239,7 +1258,7 @@ function listClasses() {
 
 function listAvailableDevices() {
   return getRows(SHEETS.CHROMEBOOKS)
-    .filter((row) => row.device_status === STATUS.AVAILABLE)
+    .filter((row) => normalizeDeviceStatus(row.device_status) === STATUS.AVAILABLE)
     .map((row) => ({ device_key: row.device_key, asset_no: row.asset_no }));
 }
 
