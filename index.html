@@ -458,11 +458,26 @@
                 <button id="downloadBulkLoanTemplateBtn" class="btn-secondary" type="button">ดาวน์โหลดไฟล์ตัวอย่าง</button>
               </div>
 
+              <div class="student-export-toolbar">
+                <div class="student-export-copy">
+                  <strong>เตรียมรายชื่อนักเรียนที่ยังไม่ได้ยืม</strong>
+                  <span>เลือกช่วงชั้นแล้วดาวน์โหลดไฟล์ที่แยกชีตตามห้อง จากนั้นกรอกเลขเครื่องและอัปโหลดไฟล์เดิมกลับมา</span>
+                </div>
+                <label class="student-export-select">
+                  <span class="text-sm font-bold">ช่วงชั้น</span>
+                  <select id="unborrowedGradeSelect" class="input">
+                    <option value="">กำลังโหลดระดับชั้น...</option>
+                  </select>
+                </label>
+                <button id="downloadUnborrowedStudentsBtn" class="btn-primary" type="button" disabled>ดาวน์โหลดรายชื่อแยกห้อง</button>
+                <span id="unborrowedExportMeta" class="student-export-meta" aria-live="polite"></span>
+              </div>
+
               <div class="bulk-import-layout">
                 <ol class="import-steps" aria-label="ขั้นตอนนำเข้ารายการยืม">
                   <li>
                     <strong>เตรียมไฟล์</strong>
-                    <span>ใช้แถวแรกเป็นหัวตาราง: รหัสนักเรียน, เลขเครื่องนิยม, วันที่ยืม, หมายเหตุ และตั้ง 2 คอลัมน์แรกเป็น Text</span>
+                    <span>ใช้แถวแรกเป็นหัวตาราง และตั้งคอลัมน์รหัสนักเรียนกับเลขเครื่องนิยมเป็น Text</span>
                   </li>
                   <li>
                     <strong>หนึ่งคนต่อหนึ่งแถว</strong>
@@ -488,7 +503,7 @@
                 <table class="table bulk-loan-table">
                   <thead>
                     <tr>
-                      <th>แถว</th>
+                      <th>ชีต / แถว</th>
                       <th>รหัสนักเรียน</th>
                       <th>ชื่อ-สกุล</th>
                       <th>ชั้น+ห้อง</th>

@@ -512,6 +512,47 @@ select:focus-visible {
   max-width: 72ch;
 }
 
+.student-export-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(150px, 190px) auto;
+  gap: 0.75rem;
+  align-items: end;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: #f9fafb;
+}
+
+.student-export-copy {
+  align-self: center;
+}
+
+.student-export-copy strong,
+.student-export-copy span {
+  display: block;
+}
+
+.student-export-copy strong {
+  color: #27272a;
+}
+
+.student-export-copy span,
+.student-export-meta {
+  margin-top: 0.15rem;
+  color: #52525b;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.student-export-select .input {
+  margin-top: 0.35rem;
+}
+
+.student-export-meta {
+  grid-column: 1 / -1;
+  min-height: 1.25rem;
+  margin: 0;
+}
+
 .bulk-import-layout {
   display: grid;
   grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
@@ -1164,6 +1205,15 @@ select:focus-visible {
   .bulk-import-layout {
     grid-template-columns: 1fr;
   }
+
+  .student-export-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .student-export-copy,
+  .student-export-meta {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 1200px) {
@@ -1254,6 +1304,15 @@ select:focus-visible {
   .bulk-import-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .student-export-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .student-export-copy,
+  .student-export-meta {
+    grid-column: auto;
   }
 }
 

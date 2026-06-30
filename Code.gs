@@ -79,6 +79,8 @@ function handleRequest(e) {
       importBorrowHistory: () => importBorrowHistory(data),
       importData: () => importBorrowHistory(data),
       listClasses: () => listClasses(),
+      listGradeGroups: () => listGradeGroups(),
+      listUnborrowedStudentsByGrade: () => listUnborrowedStudentsByGrade(data),
       listAvailableDevices: () => listAvailableDevices(),
       listAvailableDeviceReport: () => listAvailableDeviceReport(),
       createBorrowRequest: () => createBorrowRequest(data),
@@ -580,6 +582,7 @@ function processBulkLoans(data, shouldWrite) {
     if (error) {
       skipped++;
       results.push({
+        source_sheet: mapped.source_sheet,
         source_row: mapped.source_row,
         student_id: mapped.student_id,
         device_key: mapped.device_key,
@@ -615,6 +618,7 @@ function processBulkLoans(data, shouldWrite) {
     }
 
     results.push({
+      source_sheet: mapped.source_sheet,
       source_row: mapped.source_row,
       student_id: mapped.student_id,
       full_name: student.full_name || '',
@@ -646,6 +650,7 @@ function mapBulkLoanRow(row, index) {
   const get = makeGetter(row || {});
   const sourceRow = Number(row.source_row || row.__source_row || index + 2);
   return {
+    source_sheet: String(row.source_sheet || row.__source_sheet || '').trim(),
     source_row: sourceRow,
     student_id: get('student_id', 'รหัสนักเรียน', 'เลขนักเรียน', 'เลขประจำตัวนักเรียน'),
     device_key: get('device_key', 'เลขเครื่องนิยม', 'เลขเครื่อง', 'หมายเลขเครื่อง', 'Key', 'key'),
@@ -1267,6 +1272,91 @@ function listClasses() {
   const result = Array.from(new Set(classes)).sort(naturalClassSort);
   if (hasTeachers) result.push('ครู');
   return result;
+}
+
+function listGradeGroups() {
+  const groups = {};
+  getRows(SHEETS.STUDENTS).forEach((student) => {
+    const gradeLevel = String(student.grade_level || '').trim();
+    const gradePrefix = getGradePrefix(gradeLevel);
+    if (!gradePrefix) return;
+    if (!groups[gradePrefix]) {
+      groups[gradePrefix] = {
+        grade_prefix: gradePrefix,
+        student_count: 0,
+        rooms: new Set(),
+      };
+    }
+    groups[gradePrefix].student_count++;
+    if (gradeLevel) groups[gradePrefix].rooms.add(gradeLevel);
+  });
+
+  return Object.keys(groups)
+    .sort(naturalClassSort)
+    .map((key) => ({
+      grade_prefix: groups[key].grade_prefix,
+      student_count: groups[key].student_count,
+      room_count: groups[key].rooms.size,
+    }));
+}
+
+function listUnborrowedStudentsByGrade(data) {
+  const gradePrefix = required(data.grade_prefix, 'ระดับชั้น');
+  const inventory = getSynchronizedInventory(10000);
+  const activeStudentIds = new Set(inventory.transactions
+    .filter((row) => isBorrowingStatus(row.status) && getTransactionBorrowerType(row) === 'student')
+    .map((row) => String(row.student_id || row.borrower_id || '').trim())
+    .filter(Boolean));
+  const seenStudentIds = new Set();
+  const grouped = {};
+
+  getRows(SHEETS.STUDENTS)
+    .filter((student) => getGradePrefix(student.grade_level) === gradePrefix)
+    .filter((student) => {
+      const studentId = String(student.student_id || '').trim();
+      if (!studentId || activeStudentIds.has(studentId) || seenStudentIds.has(studentId)) return false;
+      seenStudentIds.add(studentId);
+      return true;
+    })
+    .sort((a, b) => {
+      const classCompare = naturalClassSort(a.grade_level, b.grade_level);
+      if (classCompare !== 0) return classCompare;
+      const numberCompare = Number(a.student_no || 9999) - Number(b.student_no || 9999);
+      return numberCompare || String(a.student_id).localeCompare(String(b.student_id), 'th', { numeric: true });
+    })
+    .forEach((student) => {
+      const gradeLevel = String(student.grade_level || gradePrefix).trim();
+      if (!grouped[gradeLevel]) grouped[gradeLevel] = [];
+      grouped[gradeLevel].push({
+        student_id: student.student_id,
+        full_name: student.full_name,
+        grade_level: gradeLevel,
+        student_no: student.student_no || '',
+      });
+    });
+
+  const rooms = Object.keys(grouped)
+    .sort(naturalClassSort)
+    .map((gradeLevel) => ({
+      grade_level: gradeLevel,
+      student_count: grouped[gradeLevel].length,
+      students: grouped[gradeLevel],
+    }));
+
+  return {
+    grade_prefix: gradePrefix,
+    generated_at: nowText(),
+    total_students: rooms.reduce((sum, room) => sum + room.student_count, 0),
+    room_count: rooms.length,
+    rooms,
+  };
+}
+
+function getGradePrefix(value) {
+  const text = String(value || '').replace(/\s+/g, '').trim();
+  if (!text) return '';
+  const match = text.match(/^(.+?\d+)(?:[/\\-]|ห้อง)/i);
+  return match ? match[1] : text;
 }
 
 function listAvailableDevices() {

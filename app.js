@@ -114,6 +114,10 @@ function bindEvents() {
   document.getElementById('borrowHistoryFile').addEventListener('change', (event) => onExcelSelected(event, 'borrow'));
   document.getElementById('bulkLoanFile').addEventListener('change', onBulkLoanFileSelected);
   document.getElementById('downloadBulkLoanTemplateBtn').addEventListener('click', downloadBulkLoanTemplate);
+  document.getElementById('unborrowedGradeSelect').addEventListener('change', (event) => {
+    document.getElementById('downloadUnborrowedStudentsBtn').disabled = !event.target.value;
+  });
+  document.getElementById('downloadUnborrowedStudentsBtn').addEventListener('click', downloadUnborrowedStudentsWorkbook);
   document.getElementById('importBulkLoansBtn').addEventListener('click', onImportBulkLoans);
   document.getElementById('importStudentsBtn').addEventListener('click', onImportStudents);
   document.getElementById('importBorrowBtn').addEventListener('click', onImportBorrowHistory);
@@ -228,6 +232,7 @@ function showAdminPage(page) {
   }
   if (page === 'requests') loadBorrowRequests();
   if (page === 'deviceReport') loadDeviceReport();
+  if (page === 'import') loadBulkLoanGradeOptions();
 }
 
 async function loadPublicDashboard() {
@@ -947,16 +952,129 @@ async function downloadDeviceReportExcel() {
   }
 }
 
+async function loadBulkLoanGradeOptions() {
+  const select = document.getElementById('unborrowedGradeSelect');
+  const button = document.getElementById('downloadUnborrowedStudentsBtn');
+  const current = select.value;
+  select.disabled = true;
+  button.disabled = true;
+  select.innerHTML = '<option value="">กำลังโหลดระดับชั้น...</option>';
+  try {
+    const groups = await api('listGradeGroups');
+    select.innerHTML = '<option value="">เลือกระดับชั้น</option>' + (groups || []).map((group) => `
+      <option value="${escapeAttr(group.grade_prefix)}">
+        ${escapeHtml(group.grade_prefix)} · ${group.room_count || 0} ห้อง · ${group.student_count || 0} คน
+      </option>
+    `).join('');
+    if (current && (groups || []).some((group) => group.grade_prefix === current)) select.value = current;
+    button.disabled = !select.value;
+  } catch (error) {
+    select.innerHTML = '<option value="">โหลดระดับชั้นไม่สำเร็จ</option>';
+    toast(error.message, true);
+  } finally {
+    select.disabled = false;
+  }
+}
+
+async function downloadUnborrowedStudentsWorkbook() {
+  const gradePrefix = document.getElementById('unborrowedGradeSelect').value;
+  const button = document.getElementById('downloadUnborrowedStudentsBtn');
+  const meta = document.getElementById('unborrowedExportMeta');
+  if (!gradePrefix) {
+    toast('กรุณาเลือกระดับชั้น', true);
+    return;
+  }
+
+  setButtonBusy(button, true, 'กำลังสร้าง Excel...');
+  meta.textContent = 'กำลังตรวจรายชื่อนักเรียนที่ยังไม่มีรายการยืม...';
+  try {
+    const report = await api('listUnborrowedStudentsByGrade', { grade_prefix: gradePrefix });
+    if (!report.total_students) {
+      meta.textContent = `${gradePrefix} ไม่มีนักเรียนที่รอจัดเครื่อง`;
+      toast(`นักเรียน ${gradePrefix} มีรายการยืมครบแล้ว`, true);
+      return;
+    }
+
+    const workbook = XLSX.utils.book_new();
+    const usedSheetNames = new Set();
+    (report.rooms || []).forEach((room) => {
+      const worksheetRows = [
+        ['รหัสนักเรียน', 'เลขที่', 'ชื่อ-สกุล', 'ชั้น+ห้อง', 'เลขเครื่องนิยม', 'วันที่ยืม', 'หมายเหตุ'],
+        ...(room.students || []).map((student) => [
+          String(student.student_id || ''),
+          student.student_no || '',
+          student.full_name || '',
+          student.grade_level || room.grade_level || '',
+          '',
+          '',
+          '',
+        ]),
+      ];
+      const worksheet = XLSX.utils.aoa_to_sheet(worksheetRows);
+      worksheet['!cols'] = [
+        { wch: 18 },
+        { wch: 9 },
+        { wch: 32 },
+        { wch: 14 },
+        { wch: 28 },
+        { wch: 16 },
+        { wch: 30 },
+      ];
+      worksheet['!autofilter'] = { ref: `A1:G${worksheetRows.length}` };
+      XLSX.utils.book_append_sheet(workbook, worksheet, makeUniqueSheetName(room.grade_level, usedSheetNames));
+    });
+
+    const guideSheet = XLSX.utils.aoa_to_sheet([
+      ['วิธีใช้ไฟล์รายชื่อนักเรียนที่ยังไม่ได้ยืม'],
+      [`ระดับชั้น: ${report.grade_prefix}`],
+      [`จำนวน: ${report.total_students} คน จาก ${report.room_count} ห้อง`],
+      [`สร้างเมื่อ: ${report.generated_at}`],
+      ['1. เปิดชีตของแต่ละห้องแล้วกรอกเฉพาะคอลัมน์ “เลขเครื่องนิยม”'],
+      ['2. วันที่ยืมเว้นว่างได้ ระบบจะใช้วันที่อัปโหลดไฟล์'],
+      ['3. แถวที่ไม่กรอกเลขเครื่องจะถูกข้ามโดยอัตโนมัติ'],
+      ['4. อัปโหลดไฟล์นี้กลับที่เมนู “นำเข้ารายการยืมด้วย Excel”'],
+    ]);
+    guideSheet['!cols'] = [{ wch: 88 }];
+    XLSX.utils.book_append_sheet(workbook, guideSheet, makeUniqueSheetName('คำแนะนำ', usedSheetNames));
+
+    const filenameGrade = gradePrefix.replace(/[\\/:*?"<>|]/g, '-');
+    XLSX.writeFile(workbook, `รายชื่อ${filenameGrade}-ยังไม่ได้ยืม-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    meta.textContent = `ดาวน์โหลดแล้ว ${report.total_students} คน แยก ${report.room_count} ห้อง`;
+    toast(`สร้างรายชื่อ ${gradePrefix} ที่ยังไม่ได้ยืม ${report.total_students} คนแล้ว`);
+  } catch (error) {
+    meta.textContent = error.message;
+    toast(error.message, true);
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+function makeUniqueSheetName(value, usedNames) {
+  const base = String(value || 'ห้อง')
+    .replace(/[\\/?*\[\]:]/g, '_')
+    .slice(0, 31) || 'ห้อง';
+  let name = base;
+  let suffix = 2;
+  while (usedNames.has(name)) {
+    const tail = `_${suffix++}`;
+    name = base.slice(0, 31 - tail.length) + tail;
+  }
+  usedNames.add(name);
+  return name;
+}
+
 function downloadBulkLoanTemplate() {
   const today = new Date().toISOString().slice(0, 10);
   const workbook = XLSX.utils.book_new();
   const loanSheet = XLSX.utils.aoa_to_sheet([
-    ['รหัสนักเรียน', 'เลขเครื่องนิยม', 'วันที่ยืม', 'หมายเหตุ'],
-    ['9246', 'CB-001', today, 'ยืมด้วยไฟล์ Excel'],
-    ['9247', 'CB-002', today, ''],
+    ['รหัสนักเรียน', 'ชื่อ-สกุล', 'ชั้น+ห้อง', 'เลขเครื่องนิยม', 'วันที่ยืม', 'หมายเหตุ'],
+    ['9246', 'ตัวอย่าง นักเรียน', 'ม.4/1', 'CB-001', today, 'ยืมด้วยไฟล์ Excel'],
+    ['9247', 'ตัวอย่าง นักเรียน', 'ม.4/1', 'CB-002', today, ''],
   ]);
   loanSheet['!cols'] = [
     { wch: 18 },
+    { wch: 32 },
+    { wch: 14 },
     { wch: 24 },
     { wch: 16 },
     { wch: 34 },
@@ -967,7 +1085,7 @@ function downloadBulkLoanTemplate() {
     ['1. แถวที่ 1 ต้องเป็นหัวตาราง และห้ามเปลี่ยนชื่อคอลัมน์'],
     ['2. เริ่มกรอกข้อมูลตั้งแต่แถวที่ 2 โดยหนึ่งคนต่อหนึ่งแถว'],
     ['3. รหัสนักเรียนและเลขเครื่องนิยมเป็นข้อมูลจำเป็น'],
-    ['4. ตั้งคอลัมน์รหัสนักเรียนและเลขเครื่องนิยมเป็นรูปแบบข้อความ (Text)'],
+    ['4. ตั้งคอลัมน์ “รหัสนักเรียน” และ “เลขเครื่องนิยม” เป็นรูปแบบข้อความ (Text)'],
     ['5. วันที่ยืมใช้รูปแบบ YYYY-MM-DD หากเว้นว่างระบบจะใช้วันที่ปัจจุบัน'],
     ['6. ห้ามใช้เลขนักเรียนหรือเลขเครื่องซ้ำกันในไฟล์เดียวกัน'],
     ['7. ระบบรับไฟล์ได้ไม่เกิน 500 รายการต่อครั้ง'],
@@ -994,8 +1112,11 @@ async function onBulkLoanFileSelected(event) {
 
   summary.textContent = 'กำลังอ่านและตรวจสอบไฟล์...';
   try {
-    const rawRows = await readBulkLoanWorkbook(file);
-    if (!rawRows.length) throw new Error('ไม่พบหัวตารางหรือข้อมูลในไฟล์');
+    const workbookRows = await readBulkLoanWorkbook(file);
+    if (!workbookRows.length) throw new Error('ไม่พบหัวตารางหรือข้อมูลในไฟล์');
+    const rawRows = workbookRows.filter((row) => pickValue(row, DEVICE_KEY_KEYS));
+    const blankDeviceCount = workbookRows.length - rawRows.length;
+    if (!rawRows.length) throw new Error('ยังไม่ได้กรอกเลขเครื่องนิยมในไฟล์');
     if (rawRows.length > 500) throw new Error('ไฟล์มีเกิน 500 แถว กรุณาแบ่งเป็นหลายไฟล์');
 
     state.bulkLoanRows = prepareBulkLoanRows(rawRows);
@@ -1004,13 +1125,13 @@ async function onBulkLoanFileSelected(event) {
     const serverResult = candidates.length
       ? await api('validateBulkLoans', { rows: candidates })
       : { results: [] };
-    const validationByRow = new Map((serverResult.results || []).map((row) => [Number(row.source_row), row]));
+    const validationByRow = new Map((serverResult.results || []).map((row) => [bulkLoanRowKey(row), row]));
 
     state.bulkLoanValidation = state.bulkLoanRows.map((row) => {
       if (row.client_error) {
         return Object.assign({}, row, { success: false, message: row.client_error });
       }
-      return validationByRow.get(Number(row.source_row)) || Object.assign({}, row, {
+      return validationByRow.get(bulkLoanRowKey(row)) || Object.assign({}, row, {
         success: false,
         message: 'ตรวจสอบแถวนี้ไม่สำเร็จ',
       });
@@ -1019,7 +1140,7 @@ async function onBulkLoanFileSelected(event) {
     renderBulkLoanPreview(state.bulkLoanValidation);
     const validCount = state.bulkLoanValidation.filter((row) => row.success).length;
     const invalidCount = clientInvalid.length + (serverResult.skipped_count || 0);
-    summary.textContent = `ทั้งหมด ${rawRows.length} แถว · พร้อมบันทึก ${validCount} · ต้องแก้ไข ${invalidCount}`;
+    summary.textContent = `กรอกเลขเครื่อง ${rawRows.length} แถว · พร้อมบันทึก ${validCount} · ต้องแก้ไข ${invalidCount} · ข้ามช่องว่าง ${blankDeviceCount}`;
     importButton.disabled = validCount === 0;
     toast(`ตรวจไฟล์แล้ว: พร้อมบันทึก ${validCount} แถว, ต้องแก้ไข ${invalidCount} แถว`);
   } catch (error) {
@@ -1032,12 +1153,13 @@ async function onBulkLoanFileSelected(event) {
 async function readBulkLoanWorkbook(file) {
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  return sheetToObjects(sheet, true);
+  return workbook.SheetNames.flatMap((sheetName) => sheetToObjects(workbook.Sheets[sheetName], true)
+    .map((row) => Object.assign(row, { __source_sheet: sheetName })));
 }
 
 function prepareBulkLoanRows(rawRows) {
   const rows = rawRows.map((row, index) => ({
+    source_sheet: String(row.__source_sheet || '').trim(),
     source_row: Number(row.__source_row || index + 2),
     student_id: pickValue(row, STUDENT_ID_KEYS),
     device_key: pickValue(row, DEVICE_KEY_KEYS),
@@ -1056,6 +1178,10 @@ function prepareBulkLoanRows(rawRows) {
     else if (deviceCounts.get(row.device_key) > 1) error = 'เลขเครื่องซ้ำในไฟล์';
     return Object.assign(row, { client_error: error });
   });
+}
+
+function bulkLoanRowKey(row) {
+  return `${String(row.source_sheet || row.__source_sheet || '')}::${Number(row.source_row || row.__source_row || 0)}`;
 }
 
 function countValues(values) {
@@ -1094,7 +1220,7 @@ function renderBulkLoanPreview(rows) {
 
   body.innerHTML = rows.map((row) => `
     <tr class="${row.success ? 'row-ready' : 'row-invalid'}">
-      <td>${escapeHtml(row.source_row || '-')}</td>
+      <td>${escapeHtml([row.source_sheet, row.source_row].filter(Boolean).join(' / ') || '-')}</td>
       <td>${escapeHtml(row.student_id || '-')}</td>
       <td>${escapeHtml(row.full_name || '-')}</td>
       <td>${escapeHtml(row.grade_level || '-')}</td>
@@ -1107,11 +1233,12 @@ function renderBulkLoanPreview(rows) {
 
 async function onImportBulkLoans() {
   const validRows = state.bulkLoanValidation.filter((row) => row.success).map((row) => ({
+    source_sheet: row.source_sheet,
     source_row: row.source_row,
     student_id: row.student_id,
     device_key: row.device_key,
     borrow_date: row.borrow_date,
-    note: state.bulkLoanRows.find((source) => Number(source.source_row) === Number(row.source_row))?.note || '',
+    note: state.bulkLoanRows.find((source) => bulkLoanRowKey(source) === bulkLoanRowKey(row))?.note || '',
   }));
   if (!validRows.length) {
     toast('ไม่มีรายการที่พร้อมบันทึก', true);
@@ -1124,8 +1251,8 @@ async function onImportBulkLoans() {
   setButtonBusy(button, true, 'กำลังบันทึก...');
   try {
     const result = await api('importBulkLoans', { rows: validRows });
-    const importedByRow = new Map((result.results || []).map((row) => [Number(row.source_row), row]));
-    state.bulkLoanValidation = state.bulkLoanValidation.map((row) => importedByRow.get(Number(row.source_row)) || row);
+    const importedByRow = new Map((result.results || []).map((row) => [bulkLoanRowKey(row), row]));
+    state.bulkLoanValidation = state.bulkLoanValidation.map((row) => importedByRow.get(bulkLoanRowKey(row)) || row);
     renderBulkLoanPreview(state.bulkLoanValidation);
     document.getElementById('bulkLoanSummary').textContent = `บันทึกแล้ว ${result.assigned_count || 0} · ข้าม ${result.skipped_count || 0}`;
     document.getElementById('bulkLoanFile').value = '';
