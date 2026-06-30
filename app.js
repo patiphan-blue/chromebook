@@ -24,6 +24,7 @@ const STUDENT_ID_KEYS = ['เลขประจำตัวนักเรีย
 const CITIZEN_ID_KEYS = ['เลขบัตรประชาชนนักเรียน', 'เลขบัตรประชาชน', 'citizen_id', 'national_id', 'เลขประจำตัวประชาชน'];
 const PHONE_KEYS = ['เบอร์โทรศัพท์', 'เบอร์โทรศัพท์มือถือ', 'phone', 'โทรศัพท์', 'เบอร์โทร', 'หมายเลขโทรศัพท์', 'โทรศัพท์มือถือ'];
 const DEVICE_KEY_KEYS = ['เลขเครื่องนิยม', 'เลขเครื่อง', 'หมายเลขเครื่อง', 'device_key', 'Key', 'key'];
+const ASSET_NO_KEYS = ['เลขที่ทรัพย์สิน', 'เลขทรัพย์สิน', 'เลขครุภัณฑ์', 'asset_no'];
 const BORROW_DATE_KEYS = ['วันที่ยืม', 'borrow_date'];
 const NOTE_KEYS = ['หมายเหตุ', 'note'];
 
@@ -999,7 +1000,7 @@ async function downloadUnborrowedStudentsWorkbook() {
     const usedSheetNames = new Set();
     (report.rooms || []).forEach((room) => {
       const worksheetRows = [
-        ['รหัสนักเรียน', 'เลขที่', 'ชื่อ-สกุล', 'ชั้น+ห้อง', 'เลขเครื่องนิยม', 'วันที่ยืม', 'หมายเหตุ'],
+        ['รหัสนักเรียน', 'เลขที่', 'ชื่อ-สกุล', 'ชั้น+ห้อง', 'เลขที่ทรัพย์สิน', 'วันที่ยืม', 'หมายเหตุ'],
         ...(room.students || []).map((student) => [
           String(student.student_id || ''),
           student.student_no || '',
@@ -1029,9 +1030,9 @@ async function downloadUnborrowedStudentsWorkbook() {
       [`ระดับชั้น: ${report.grade_prefix}`],
       [`จำนวน: ${report.total_students} คน จาก ${report.room_count} ห้อง`],
       [`สร้างเมื่อ: ${report.generated_at}`],
-      ['1. เปิดชีตของแต่ละห้องแล้วกรอกเฉพาะคอลัมน์ “เลขเครื่องนิยม”'],
+      ['1. เปิดชีตของแต่ละห้องแล้วกรอกเฉพาะคอลัมน์ “เลขที่ทรัพย์สิน”'],
       ['2. วันที่ยืมเว้นว่างได้ ระบบจะใช้วันที่อัปโหลดไฟล์'],
-      ['3. แถวที่ไม่กรอกเลขเครื่องจะถูกข้ามโดยอัตโนมัติ'],
+      ['3. แถวที่ไม่กรอกเลขที่ทรัพย์สินจะถูกข้ามโดยอัตโนมัติ'],
       ['4. อัปโหลดไฟล์นี้กลับที่เมนู “นำเข้ารายการยืมด้วย Excel”'],
     ]);
     guideSheet['!cols'] = [{ wch: 88 }];
@@ -1067,9 +1068,9 @@ function downloadBulkLoanTemplate() {
   const today = new Date().toISOString().slice(0, 10);
   const workbook = XLSX.utils.book_new();
   const loanSheet = XLSX.utils.aoa_to_sheet([
-    ['รหัสนักเรียน', 'ชื่อ-สกุล', 'ชั้น+ห้อง', 'เลขเครื่องนิยม', 'วันที่ยืม', 'หมายเหตุ'],
-    ['9246', 'ตัวอย่าง นักเรียน', 'ม.4/1', 'CB-001', today, 'ยืมด้วยไฟล์ Excel'],
-    ['9247', 'ตัวอย่าง นักเรียน', 'ม.4/1', 'CB-002', today, ''],
+    ['รหัสนักเรียน', 'ชื่อ-สกุล', 'ชั้น+ห้อง', 'เลขที่ทรัพย์สิน', 'วันที่ยืม', 'หมายเหตุ'],
+    ['9246', 'ตัวอย่าง นักเรียน', 'ม.4/1', '2197/2569', today, 'ยืมด้วยไฟล์ Excel'],
+    ['9247', 'ตัวอย่าง นักเรียน', 'ม.4/1', '2198/2569', today, ''],
   ]);
   loanSheet['!cols'] = [
     { wch: 18 },
@@ -1084,10 +1085,10 @@ function downloadBulkLoanTemplate() {
     ['คำแนะนำการกรอกไฟล์'],
     ['1. แถวที่ 1 ต้องเป็นหัวตาราง และห้ามเปลี่ยนชื่อคอลัมน์'],
     ['2. เริ่มกรอกข้อมูลตั้งแต่แถวที่ 2 โดยหนึ่งคนต่อหนึ่งแถว'],
-    ['3. รหัสนักเรียนและเลขเครื่องนิยมเป็นข้อมูลจำเป็น'],
-    ['4. ตั้งคอลัมน์ “รหัสนักเรียน” และ “เลขเครื่องนิยม” เป็นรูปแบบข้อความ (Text)'],
+    ['3. รหัสนักเรียนและเลขที่ทรัพย์สินเป็นข้อมูลจำเป็น'],
+    ['4. ตั้งคอลัมน์ “รหัสนักเรียน” และ “เลขที่ทรัพย์สิน” เป็นรูปแบบข้อความ (Text)'],
     ['5. วันที่ยืมใช้รูปแบบ YYYY-MM-DD หากเว้นว่างระบบจะใช้วันที่ปัจจุบัน'],
-    ['6. ห้ามใช้เลขนักเรียนหรือเลขเครื่องซ้ำกันในไฟล์เดียวกัน'],
+    ['6. ห้ามใช้เลขนักเรียนหรือเลขที่ทรัพย์สินซ้ำกันในไฟล์เดียวกัน'],
     ['7. ระบบรับไฟล์ได้ไม่เกิน 500 รายการต่อครั้ง'],
   ]);
   guideSheet['!cols'] = [{ wch: 86 }];
@@ -1114,9 +1115,11 @@ async function onBulkLoanFileSelected(event) {
   try {
     const workbookRows = await readBulkLoanWorkbook(file);
     if (!workbookRows.length) throw new Error('ไม่พบหัวตารางหรือข้อมูลในไฟล์');
-    const rawRows = workbookRows.filter((row) => pickValue(row, DEVICE_KEY_KEYS));
+    const rawRows = workbookRows.filter((row) =>
+      pickValue(row, ASSET_NO_KEYS) || pickValue(row, DEVICE_KEY_KEYS)
+    );
     const blankDeviceCount = workbookRows.length - rawRows.length;
-    if (!rawRows.length) throw new Error('ยังไม่ได้กรอกเลขเครื่องนิยมในไฟล์');
+    if (!rawRows.length) throw new Error('ยังไม่ได้กรอกเลขที่ทรัพย์สินในไฟล์');
     if (rawRows.length > 500) throw new Error('ไฟล์มีเกิน 500 แถว กรุณาแบ่งเป็นหลายไฟล์');
 
     state.bulkLoanRows = prepareBulkLoanRows(rawRows);
@@ -1140,7 +1143,7 @@ async function onBulkLoanFileSelected(event) {
     renderBulkLoanPreview(state.bulkLoanValidation);
     const validCount = state.bulkLoanValidation.filter((row) => row.success).length;
     const invalidCount = clientInvalid.length + (serverResult.skipped_count || 0);
-    summary.textContent = `กรอกเลขเครื่อง ${rawRows.length} แถว · พร้อมบันทึก ${validCount} · ต้องแก้ไข ${invalidCount} · ข้ามช่องว่าง ${blankDeviceCount}`;
+    summary.textContent = `กรอกเลขที่ทรัพย์สิน ${rawRows.length} แถว · พร้อมบันทึก ${validCount} · ต้องแก้ไข ${invalidCount} · ข้ามช่องว่าง ${blankDeviceCount}`;
     importButton.disabled = validCount === 0;
     toast(`ตรวจไฟล์แล้ว: พร้อมบันทึก ${validCount} แถว, ต้องแก้ไข ${invalidCount} แถว`);
   } catch (error) {
@@ -1162,22 +1165,31 @@ function prepareBulkLoanRows(rawRows) {
     source_sheet: String(row.__source_sheet || '').trim(),
     source_row: Number(row.__source_row || index + 2),
     student_id: pickValue(row, STUDENT_ID_KEYS),
+    asset_no: pickValue(row, ASSET_NO_KEYS),
     device_key: pickValue(row, DEVICE_KEY_KEYS),
     borrow_date: normalizeBulkLoanDateValue(pickValue(row, BORROW_DATE_KEYS)),
     note: pickValue(row, NOTE_KEYS),
   }));
   const studentCounts = countValues(rows.map((row) => row.student_id));
-  const deviceCounts = countValues(rows.map((row) => row.device_key));
+  const deviceCounts = countValues(rows.map((row) => row.asset_no
+    ? `asset:${normalizeAssetNoValue(row.asset_no)}`
+    : `device:${row.device_key}`));
 
   return rows.map((row) => {
     let error = '';
     if (!row.student_id) error = 'ไม่พบรหัสนักเรียน';
-    else if (!row.device_key) error = 'ไม่พบเลขเครื่อง';
+    else if (!row.asset_no && !row.device_key) error = 'ไม่พบเลขที่ทรัพย์สิน';
     else if (!row.borrow_date) error = 'วันที่ยืมไม่ถูกต้อง';
     else if (studentCounts.get(row.student_id) > 1) error = 'รหัสนักเรียนซ้ำในไฟล์';
-    else if (deviceCounts.get(row.device_key) > 1) error = 'เลขเครื่องซ้ำในไฟล์';
+    else if (deviceCounts.get(row.asset_no
+      ? `asset:${normalizeAssetNoValue(row.asset_no)}`
+      : `device:${row.device_key}`) > 1) error = 'เลขที่ทรัพย์สินหรือเลขเครื่องซ้ำในไฟล์';
     return Object.assign(row, { client_error: error });
   });
+}
+
+function normalizeAssetNoValue(value) {
+  return String(value || '').normalize('NFC').replace(/\s+/g, '').trim().toLowerCase();
 }
 
 function bulkLoanRowKey(row) {
@@ -1224,7 +1236,7 @@ function renderBulkLoanPreview(rows) {
       <td>${escapeHtml(row.student_id || '-')}</td>
       <td>${escapeHtml(row.full_name || '-')}</td>
       <td>${escapeHtml(row.grade_level || '-')}</td>
-      <td>${escapeHtml(row.device_key || '-')}</td>
+      <td>${escapeHtml(row.asset_no || row.device_key || '-')}</td>
       <td>${escapeHtml(row.borrow_date || '-')}</td>
       <td><span class="badge ${row.success ? 'badge-green' : 'badge-red'}">${escapeHtml(row.message || '-')}</span></td>
     </tr>
@@ -1236,6 +1248,7 @@ async function onImportBulkLoans() {
     source_sheet: row.source_sheet,
     source_row: row.source_row,
     student_id: row.student_id,
+    asset_no: row.asset_no,
     device_key: row.device_key,
     borrow_date: row.borrow_date,
     note: state.bulkLoanRows.find((source) => bulkLoanRowKey(source) === bulkLoanRowKey(row))?.note || '',
@@ -1369,7 +1382,13 @@ function sheetToStudentRows(sheet) {
 function detectHeaderRow(matrix) {
   return matrix.findIndex((row) => {
     const text = row.map(normalizeHeader).join('|');
-    return text.includes('เลขประจำตัวนักเรียน') || text.includes('รหัสนักเรียน') || text.includes('เลขเครื่องนิยม');
+    return text.includes('เลขประจำตัวนักเรียน') ||
+      text.includes('รหัสนักเรียน') ||
+      text.includes('เลขเครื่องนิยม') ||
+      text.includes('เลขที่ทรัพย์สิน') ||
+      text.includes('student_id') ||
+      text.includes('device_key') ||
+      text.includes('asset_no');
   });
 }
 

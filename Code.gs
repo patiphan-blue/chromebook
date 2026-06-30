@@ -551,6 +551,13 @@ function processBulkLoans(data, shouldWrite) {
   const txRows = getRows(SHEETS.TRANSACTIONS);
   const studentsById = indexBy(studentRows, 'student_id');
   const devicesByKey = indexBy(deviceRows, 'device_key');
+  const devicesByAssetNo = {};
+  deviceRows.forEach((device) => {
+    const assetKey = normalizeAssetNo(device.asset_no);
+    if (!assetKey) return;
+    if (!devicesByAssetNo[assetKey]) devicesByAssetNo[assetKey] = [];
+    devicesByAssetNo[assetKey].push(device);
+  });
   const activeBorrowerKeys = new Set(txRows
     .filter((row) => isBorrowingStatus(row.status) && isTransactionDeviceStillBorrowed(row, devicesByKey))
     .map((row) => getTransactionBorrowerKey(row)));
@@ -563,21 +570,33 @@ function processBulkLoans(data, shouldWrite) {
   rows.forEach((raw, index) => {
     const mapped = mapBulkLoanRow(raw, index);
     const student = studentsById[mapped.student_id];
-    const device = devicesByKey[mapped.device_key];
+    const assetMatches = mapped.asset_no
+      ? devicesByAssetNo[normalizeAssetNo(mapped.asset_no)] || []
+      : [];
+    const device = mapped.asset_no
+      ? (assetMatches.length === 1 ? assetMatches[0] : null)
+      : devicesByKey[mapped.device_key];
+    const resolvedDeviceKey = device ? String(device.device_key || '').trim() : String(mapped.device_key || '').trim();
     let error = '';
 
     if (!mapped.student_id) error = 'ไม่พบรหัสนักเรียน';
-    else if (!mapped.device_key) error = 'ไม่พบเลขเครื่อง';
+    else if (!mapped.asset_no && !mapped.device_key) error = 'ไม่พบเลขที่ทรัพย์สิน';
     else if (!mapped.borrow_date) error = 'วันที่ยืมต้องเป็นรูปแบบ YYYY-MM-DD';
     else if (usedStudentIds.has(mapped.student_id)) error = 'รหัสนักเรียนซ้ำในไฟล์';
-    else if (usedDeviceKeys.has(mapped.device_key)) error = 'เลขเครื่องซ้ำในไฟล์';
+    else if (mapped.asset_no && assetMatches.length === 0) error = 'ไม่พบเลขที่ทรัพย์สินในทะเบียนเครื่อง';
+    else if (mapped.asset_no && assetMatches.length > 1) error = 'เลขที่ทรัพย์สินซ้ำในทะเบียนเครื่อง';
     else if (!student) error = 'ไม่พบนักเรียนในฐานข้อมูล';
     else if (!device) error = 'ไม่พบเครื่องในฐานข้อมูล';
+    else if (usedDeviceKeys.has(resolvedDeviceKey)) error = 'เลขที่ทรัพย์สินหรือเลขเครื่องซ้ำในไฟล์';
     else if (normalizeDeviceStatus(device.device_status) !== STATUS.AVAILABLE) error = 'เครื่องไม่ว่าง';
     else if (activeBorrowerKeys.has('student:' + mapped.student_id)) error = 'นักเรียนมีรายการยืมค้างอยู่';
 
     usedStudentIds.add(mapped.student_id);
-    usedDeviceKeys.add(mapped.device_key);
+    if (resolvedDeviceKey) usedDeviceKeys.add(resolvedDeviceKey);
+    if (device) {
+      mapped.device_key = resolvedDeviceKey;
+      mapped.asset_no = String(device.asset_no || mapped.asset_no || '').trim();
+    }
 
     if (error) {
       skipped++;
@@ -585,6 +604,7 @@ function processBulkLoans(data, shouldWrite) {
         source_sheet: mapped.source_sheet,
         source_row: mapped.source_row,
         student_id: mapped.student_id,
+        asset_no: mapped.asset_no,
         device_key: mapped.device_key,
         borrow_date: mapped.borrow_date,
         success: false,
@@ -623,6 +643,7 @@ function processBulkLoans(data, shouldWrite) {
       student_id: mapped.student_id,
       full_name: student.full_name || '',
       grade_level: student.grade_level || '',
+      asset_no: mapped.asset_no,
       device_key: mapped.device_key,
       borrow_date: mapped.borrow_date,
       success: true,
@@ -653,10 +674,19 @@ function mapBulkLoanRow(row, index) {
     source_sheet: String(row.source_sheet || row.__source_sheet || '').trim(),
     source_row: sourceRow,
     student_id: get('student_id', 'รหัสนักเรียน', 'เลขนักเรียน', 'เลขประจำตัวนักเรียน'),
+    asset_no: get('asset_no', 'เลขที่ทรัพย์สิน', 'เลขทรัพย์สิน', 'เลขครุภัณฑ์'),
     device_key: get('device_key', 'เลขเครื่องนิยม', 'เลขเครื่อง', 'หมายเลขเครื่อง', 'Key', 'key'),
     borrow_date: normalizeBulkLoanDate(getRawValue(row, 'borrow_date', 'วันที่ยืม')),
     note: get('note', 'หมายเหตุ'),
   };
+}
+
+function normalizeAssetNo(value) {
+  return String(value || '')
+    .normalize('NFC')
+    .replace(/\s+/g, '')
+    .trim()
+    .toLowerCase();
 }
 
 function normalizeBulkLoanDate(value) {
