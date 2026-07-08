@@ -185,7 +185,7 @@
       </section>
 
       <section id="tableSection" class="dashboard-panel">
-        <div class="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div class="dashboard-table-header">
           <div>
             <p class="text-sm font-semibold theme-accent">Borrowing Ledger</p>
             <h2 class="text-xl font-bold">ตารางติดตามการยืม-คืน</h2>
@@ -195,12 +195,13 @@
             <select id="dashboardClassFilter" class="input">
               <option value="">ทุกห้อง</option>
             </select>
-            <input id="dashboardSearchInput" class="input md:w-80" placeholder="ค้นหารหัส / ชื่อ / เลขเครื่อง">
-            <div class="flex flex-wrap gap-2">
+            <input id="dashboardSearchInput" class="input md:w-80" placeholder="ค้นหาเลขทรัพย์สิน / รหัสเครื่อง / ผู้ถือ">
+            <div class="dashboard-table-tabs">
               <button class="table-tab active" data-table="students">นักเรียน</button>
               <button class="table-tab" data-table="teachers">ครู</button>
               <button class="table-tab" data-table="returned">คืนแล้ว</button>
               <button class="table-tab" data-table="available">เครื่องว่าง</button>
+              <button class="table-tab" data-table="devices">ค้นหาเครื่อง</button>
             </div>
           </div>
         </div>

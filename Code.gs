@@ -211,6 +211,7 @@ function getDashboard() {
   const chromebooks = inventory.chromebooks;
   const transactions = inventory.transactions;
   const students = getRows(SHEETS.STUDENTS);
+  const teachers = getRows(SHEETS.TEACHERS);
   const active = transactions.filter((row) => isBorrowingStatus(row.status));
 
   const statusCounts = chromebooks.reduce((acc, row) => {
@@ -231,8 +232,54 @@ function getDashboard() {
     available_devices: chromebooks
       .filter((row) => normalizeDeviceStatus(row.device_status) === STATUS.AVAILABLE)
       .map((row) => ({ device_key: row.device_key, asset_no: row.asset_no })),
+    device_tracking: buildDeviceTrackingRows(chromebooks, transactions, students, teachers),
     recent_transactions: transactions.slice(-10).reverse(),
   };
+}
+
+function buildDeviceTrackingRows(chromebooks, transactions, students, teachers) {
+  const studentsById = indexBy(students, 'student_id');
+  const teachersById = indexBy(teachers, 'teacher_id');
+  const activeByDevice = {};
+
+  transactions.forEach((row) => {
+    const deviceKey = String(row.device_key || '').trim();
+    if (deviceKey && isBorrowingStatus(row.status)) activeByDevice[deviceKey] = row;
+  });
+
+  return chromebooks.map((device) => {
+    const deviceKey = String(device.device_key || '').trim();
+    const active = activeByDevice[deviceKey] || null;
+    const status = normalizeDeviceStatus(device.device_status) || 'ไม่ระบุ';
+    const borrowerType = active ? getTransactionBorrowerType(active) : '';
+    const borrowerId = String(active
+      ? (borrowerType === 'teacher'
+        ? active.teacher_id || active.borrower_id || active.student_id || ''
+        : active.student_id || active.borrower_id || '')
+      : device.current_student_id || '').trim();
+    const borrower = borrowerType === 'teacher'
+      ? teachersById[borrowerId] || {}
+      : studentsById[borrowerId] || teachersById[borrowerId] || {};
+
+    return {
+      device_key: deviceKey,
+      asset_no: device.asset_no || '',
+      device_status: status,
+      borrower_type: borrowerType || (teachersById[borrowerId] ? 'teacher' : borrowerId ? 'student' : ''),
+      borrower_id: status === STATUS.AVAILABLE ? '' : borrowerId,
+      full_name: status === STATUS.AVAILABLE
+        ? ''
+        : active && active.borrower_name || borrower.full_name || (borrowerId ? 'ไม่พบชื่อในฐานข้อมูล' : ''),
+      grade_level: status === STATUS.AVAILABLE
+        ? ''
+        : (borrowerType === 'teacher' || teachersById[borrowerId] ? 'ครู' : borrower.grade_level || ''),
+      borrow_date: active ? active.borrow_date || '' : '',
+    };
+  }).sort((a, b) => String(a.asset_no || a.device_key).localeCompare(
+    String(b.asset_no || b.device_key),
+    'th',
+    { numeric: true, sensitivity: 'base' }
+  ));
 }
 
 function getSynchronizedInventory(waitMs) {

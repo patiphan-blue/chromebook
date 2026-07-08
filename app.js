@@ -12,7 +12,7 @@ const state = {
   borrowRequests: [],
   assignClassStudents: [],
   assignStudentSearch: '',
-  dashboardTables: { students: [], teachers: [], returned: [], available: [] },
+  dashboardTables: { students: [], teachers: [], returned: [], available: [], devices: [] },
   activeDashboardTable: 'students',
   dashboardSearch: '',
   dashboardClassFilter: '',
@@ -251,18 +251,65 @@ async function loadPublicDashboard() {
     document.getElementById('repairDevices').textContent = dashboard.repairing || 0;
     document.getElementById('totalStudents').textContent = dashboard.total_students || 0;
 
+    const deviceTracking = Array.isArray(dashboard.device_tracking)
+      ? dashboard.device_tracking
+      : buildDeviceTrackingFallback(availableDevices, tables);
     state.dashboardTables = {
       students: tables.students || [],
       teachers: tables.teachers || [],
       returned: tables.returned || [],
       available: availableDevices || [],
+      devices: deviceTracking,
     };
     renderCharts(dashboard);
     renderDashboardClassFilter();
     renderActiveDashboardTable();
   } catch (error) {
+    const meta = document.getElementById('dashboardTableMeta');
+    const tbody = document.getElementById('dashboardTableRows');
+    if (meta) meta.textContent = 'โหลดข้อมูลไม่สำเร็จ';
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center text-slate-500">${escapeHtml(error.message || 'กรุณาลองรีเฟรชอีกครั้ง')}</td></tr>`;
+    }
     toast(error.message, true);
   }
+}
+
+function buildDeviceTrackingFallback(availableDevices, tables) {
+  const rowsByDevice = new Map();
+  (availableDevices || []).forEach((device) => {
+    const deviceKey = String(device.device_key || '').trim();
+    if (!deviceKey) return;
+    rowsByDevice.set(deviceKey, {
+      device_key: deviceKey,
+      asset_no: device.asset_no || '',
+      device_status: 'ว่าง',
+      borrower_id: '',
+      full_name: '',
+      grade_level: '',
+      borrow_date: '',
+    });
+  });
+
+  [...(tables.students || []), ...(tables.teachers || [])].forEach((loan) => {
+    const deviceKey = String(loan.device_key || '').trim();
+    if (!deviceKey) return;
+    rowsByDevice.set(deviceKey, {
+      device_key: deviceKey,
+      asset_no: loan.asset_no || '',
+      device_status: loan.status || 'ถูกยืม',
+      borrower_id: loan.borrower_id || '',
+      full_name: loan.full_name || '',
+      grade_level: loan.grade_level || (loan.borrower_type === 'teacher' ? 'ครู' : ''),
+      borrow_date: loan.borrow_date || '',
+    });
+  });
+
+  return Array.from(rowsByDevice.values()).sort((a, b) => String(a.asset_no || a.device_key).localeCompare(
+    String(b.asset_no || b.device_key),
+    'th',
+    { numeric: true, sensitivity: 'base' }
+  ));
 }
 
 function renderActiveDashboardTable() {
@@ -284,7 +331,9 @@ function renderActiveDashboardTable() {
 
   head.innerHTML = type === 'available'
     ? '<tr><th>เลขเครื่อง</th><th>เลขที่ทรัพย์สิน</th><th>สถานะ</th></tr>'
-    : '<tr><th>รหัส</th><th>ชื่อ-สกุล</th><th>ชั้น+ห้อง</th><th>วันยืม</th><th>วันคืน</th><th>สถานะ</th><th>เลขเครื่อง</th></tr>';
+    : type === 'devices'
+      ? '<tr><th>เลขที่ทรัพย์สิน</th><th>รหัสเครื่อง</th><th>สถานะ</th><th>รหัสผู้ถือ</th><th>ผู้ถือปัจจุบัน</th><th>ชั้น+ห้อง</th><th>วันที่ยืม</th></tr>'
+      : '<tr><th>รหัส</th><th>ชื่อ-สกุล</th><th>ชั้น+ห้อง</th><th>วันยืม</th><th>วันคืน</th><th>สถานะ</th><th>เลขเครื่อง</th></tr>';
   tbody.innerHTML = '';
   meta.textContent = `แสดง ${rows.length} จาก ${total} รายการ`;
   if (pageInfo) {
@@ -295,10 +344,25 @@ function renderActiveDashboardTable() {
   if (prevButton) prevButton.disabled = state.dashboardPage <= 1;
   if (nextButton) nextButton.disabled = state.dashboardPage >= totalPages;
   if (classFilter) {
-    classFilter.classList.toggle('hidden', type === 'teachers' || type === 'available');
+    classFilter.classList.toggle('hidden', type === 'teachers' || type === 'available' || type === 'devices');
   }
 
   rows.forEach((row) => {
+    if (type === 'devices') {
+      tbody.insertAdjacentHTML('beforeend', `
+        <tr class="${dashboardRowClass(type, row)}">
+          <td><strong>${escapeHtml(row.asset_no || '-')}</strong></td>
+          <td>${escapeHtml(row.device_key || '-')}</td>
+          <td>${statusBadge(row.device_status)}</td>
+          <td>${escapeHtml(row.borrower_id || '-')}</td>
+          <td>${escapeHtml(row.full_name || '-')}</td>
+          <td>${escapeHtml(row.grade_level || '-')}</td>
+          <td>${escapeHtml(row.borrow_date || '-')}</td>
+        </tr>
+      `);
+      return;
+    }
+
     if (type === 'available') {
       tbody.insertAdjacentHTML('beforeend', `
         <tr class="row-ready">
@@ -353,8 +417,10 @@ function renderDashboardClassFilter() {
 }
 
 function dashboardRowClass(type, row) {
-  if (type === 'returned' || row.status === 'คืนแล้ว') return 'row-returned';
-  if (row.status === 'ส่งซ่อม') return 'row-repair';
+  const status = type === 'devices' ? row.device_status : row.status;
+  if (type === 'returned' || status === 'คืนแล้ว') return 'row-returned';
+  if (status === 'ส่งซ่อม') return 'row-repair';
+  if (type === 'devices' && status === 'ว่าง') return 'row-ready';
   return 'row-borrowing';
 }
 
@@ -362,11 +428,13 @@ function filterDashboardRows(rows, type) {
   const q = normalizeSearch(state.dashboardSearch);
   const classFilter = state.dashboardClassFilter;
   return rows.filter((row) => {
-    if (classFilter && type !== 'teachers' && type !== 'available' && row.grade_level !== classFilter) return false;
+    if (classFilter && type !== 'teachers' && type !== 'available' && type !== 'devices' && row.grade_level !== classFilter) return false;
     if (!q) return true;
     const haystack = type === 'available'
       ? [row.device_key, row.asset_no, 'ว่าง']
-      : [row.borrower_id, row.full_name, row.grade_level, row.device_key, row.status];
+      : type === 'devices'
+        ? [row.asset_no, row.device_key, row.device_status, row.borrower_id, row.full_name, row.grade_level]
+        : [row.borrower_id, row.full_name, row.grade_level, row.device_key, row.status];
     return normalizeSearch(haystack.join(' ')).includes(q);
   });
 }

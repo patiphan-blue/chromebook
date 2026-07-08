@@ -215,11 +215,32 @@ select:focus-visible {
   color: var(--danger);
 }
 
+.dashboard-table-header {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
 .dashboard-table-controls {
   display: grid;
-  grid-template-columns: minmax(140px, 180px) minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(140px, 180px) minmax(280px, 1fr);
   gap: 0.75rem;
   align-items: center;
+}
+
+.dashboard-table-controls > .input {
+  min-width: 0;
+}
+
+.dashboard-table-tabs {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.dashboard-table-tabs .table-tab {
+  flex: 0 0 auto;
 }
 
 .input {
