@@ -239,7 +239,7 @@
               <button class="tab-btn active" data-page="assign">ยืมเครื่อง</button>
               <button class="tab-btn" data-page="return">คืนหลายคน</button>
               <button class="tab-btn" data-page="requests">คำขอยืม</button>
-              <button class="tab-btn" data-page="deviceReport">เครื่องว่าง/พิมพ์</button>
+              <button class="tab-btn" data-page="deviceReport">ทะเบียนเครื่อง/Excel</button>
               <button class="tab-btn" data-page="import">นำเข้า Excel</button>
             </div>
           </div>
@@ -411,21 +411,21 @@
             <div class="sub-panel">
               <div class="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p class="text-sm font-semibold theme-accent">Available Device Sheet</p>
-                  <h3 class="text-lg font-bold">รายการเครื่องว่างสำหรับจัดแจก</h3>
+                  <p class="text-sm font-semibold theme-accent">Device Tracking Export</p>
+                  <h3 class="text-lg font-bold">ทะเบียนเครื่องพร้อมผู้ถือปัจจุบัน</h3>
                   <p id="deviceReportMeta" class="mt-1 text-sm text-stone-600">ตรวจสถานะล่าสุดก่อนแสดง พิมพ์ หรือดาวน์โหลด Excel</p>
                 </div>
                 <div class="flex flex-wrap gap-2">
-                  <button id="loadDeviceReportBtn" class="btn-secondary" type="button">โหลดเครื่องว่าง</button>
+                  <button id="loadDeviceReportBtn" class="btn-secondary" type="button">โหลดทะเบียนเครื่อง</button>
                   <button id="printDeviceReportBtn" class="btn-primary" type="button">พิมพ์</button>
-                  <button id="downloadDeviceReportBtn" class="btn-ghost" type="button">ดาวน์โหลด Excel</button>
+                  <button id="downloadDeviceReportBtn" class="btn-ghost" type="button">ดาวน์โหลด Excel ทั้งหมด</button>
                 </div>
               </div>
               <div id="deviceReportPrintArea" class="print-sheet">
                 <div class="print-title">
                   <div>
                     <h2>โรงเรียนปายวิทยาคาร</h2>
-                    <p>รายการ Chromebook ที่ยังว่างสำหรับจัดแจก</p>
+                    <p>ทะเบียน Chromebook พร้อมสถานะและผู้ถือปัจจุบัน</p>
                   </div>
                   <span id="deviceReportGeneratedAt">-</span>
                 </div>
@@ -434,11 +434,13 @@
                     <thead>
                       <tr>
                         <th>ลำดับ</th>
-                        <th>เลขเครื่อง</th>
                         <th>เลขที่ทรัพย์สิน</th>
+                        <th>รหัสเครื่อง</th>
                         <th>สถานะ</th>
-                        <th>จัดให้</th>
-                        <th>หมายเหตุ</th>
+                        <th>รหัสผู้ถือ</th>
+                        <th>ผู้ถือปัจจุบัน</th>
+                        <th>ชั้น+ห้อง</th>
+                        <th>วันที่ยืม</th>
                       </tr>
                     </thead>
                     <tbody id="deviceReportTable"></tbody>

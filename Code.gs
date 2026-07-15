@@ -83,6 +83,7 @@ function handleRequest(e) {
       listUnborrowedStudentsByGrade: () => listUnborrowedStudentsByGrade(data),
       listAvailableDevices: () => listAvailableDevices(),
       listAvailableDeviceReport: () => listAvailableDeviceReport(),
+      listDeviceTrackingReport: () => listDeviceTrackingReport(),
       createBorrowRequest: () => createBorrowRequest(data),
       listBorrowRequests: () => listBorrowRequests(data),
       updateBorrowRequestStatus: () => updateBorrowRequestStatus(data),
@@ -1458,6 +1459,30 @@ function listAvailableDeviceReport() {
     generated_at: nowText(),
     total_available: devices.length,
     devices,
+  };
+}
+
+function listDeviceTrackingReport() {
+  const inventory = getSynchronizedInventory(10000);
+  const students = getRows(SHEETS.STUDENTS);
+  const teachers = getRows(SHEETS.TEACHERS);
+  const devices = buildDeviceTrackingRows(inventory.chromebooks, inventory.transactions, students, teachers)
+    .map((row, index) => Object.assign({ no: index + 1 }, row));
+  const borrowed = devices.filter((row) => {
+    const status = normalizeDeviceStatus(row.device_status);
+    return status === STATUS.BORROWED_DEVICE || status === STATUS.BORROWING;
+  });
+  const available = devices.filter((row) => normalizeDeviceStatus(row.device_status) === STATUS.AVAILABLE);
+
+  return {
+    generated_at: nowText(),
+    total_devices: devices.length,
+    total_borrowed: borrowed.length,
+    total_available: available.length,
+    synced_devices: inventory.synced_devices,
+    devices,
+    borrowed,
+    available,
   };
 }
 

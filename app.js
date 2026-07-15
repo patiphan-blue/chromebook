@@ -918,7 +918,7 @@ async function updateBorrowRequestStatus(select) {
 async function loadDeviceReport() {
   const button = document.getElementById('loadDeviceReportBtn');
   setButtonBusy(button, true, 'กำลังโหลด...');
-  setTableLoading('deviceReportTable', 6, 'กำลังโหลดเครื่องที่ยังว่าง...');
+  setTableLoading('deviceReportTable', 8, 'กำลังโหลดทะเบียนเครื่องล่าสุด...');
   try {
     await fetchLatestDeviceReport();
   } catch (error) {
@@ -929,7 +929,7 @@ async function loadDeviceReport() {
 }
 
 async function fetchLatestDeviceReport() {
-  const report = await api('listAvailableDeviceReport');
+  const report = await api('listDeviceTrackingReport');
   state.availableDeviceReport = report.devices || [];
   renderDeviceReport(report);
   return report;
@@ -941,24 +941,28 @@ function renderDeviceReport(report = {}) {
   const meta = document.getElementById('deviceReportMeta');
   const generated = document.getElementById('deviceReportGeneratedAt');
   tbody.innerHTML = '';
-  if (meta) meta.textContent = `พบเครื่องว่าง ${rows.length} เครื่อง`;
+  if (meta) {
+    meta.textContent = `เครื่องทั้งหมด ${report.total_devices ?? rows.length} เครื่อง · กำลังยืม ${report.total_borrowed ?? 0} เครื่อง · ว่าง ${report.total_available ?? 0} เครื่อง`;
+  }
   if (generated) generated.textContent = `อัปเดต ${report.generated_at || '-'}`;
 
   rows.forEach((row, index) => {
     tbody.insertAdjacentHTML('beforeend', `
-      <tr class="row-ready">
+      <tr class="${dashboardRowClass('devices', row)}">
         <td>${index + 1}</td>
-        <td>${escapeHtml(row.device_key || '-')}</td>
         <td>${escapeHtml(row.asset_no || '-')}</td>
-        <td>${statusBadge(row.device_status || 'ว่าง')}</td>
-        <td></td>
-        <td></td>
+        <td>${escapeHtml(row.device_key || '-')}</td>
+        <td>${statusBadge(row.device_status || 'ไม่ระบุ')}</td>
+        <td>${escapeHtml(row.borrower_id || '-')}</td>
+        <td>${escapeHtml(row.full_name || '-')}</td>
+        <td>${escapeHtml(row.grade_level || '-')}</td>
+        <td>${escapeHtml(row.borrow_date || '-')}</td>
       </tr>
     `);
   });
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-slate-500">ไม่มีเครื่องว่างในระบบ</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-slate-500">ไม่พบข้อมูลเครื่องในระบบ</td></tr>';
   }
 }
 
@@ -968,7 +972,7 @@ async function printDeviceReport() {
   try {
     const report = await fetchLatestDeviceReport();
     if (!report.devices?.length) {
-      toast('ไม่มีเครื่องว่างสำหรับพิมพ์', true);
+      toast('ไม่มีข้อมูลเครื่องสำหรับพิมพ์', true);
       return;
     }
     window.print();
@@ -986,39 +990,67 @@ async function downloadDeviceReportExcel() {
     const report = await fetchLatestDeviceReport();
     const rows = report.devices || [];
     if (!rows.length) {
-      toast('ไม่มีเครื่องว่างสำหรับดาวน์โหลด', true);
+      toast('ไม่มีข้อมูลเครื่องสำหรับดาวน์โหลด', true);
       return;
     }
 
     const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet([
-      ['ลำดับ', 'เลขเครื่อง', 'เลขที่ทรัพย์สิน', 'สถานะ', 'จัดให้', 'หมายเหตุ'],
-      ...rows.map((row, index) => [
-        index + 1,
-        row.device_key || '',
-        row.asset_no || '',
-        row.device_status || 'ว่าง',
-        '',
-        '',
-      ]),
+    appendDeviceTrackingSheet(workbook, 'เครื่องทั้งหมด', rows);
+    appendDeviceTrackingSheet(workbook, 'กำลังยืม', report.borrowed || rows.filter(isBorrowedDeviceRow));
+    appendDeviceTrackingSheet(workbook, 'เครื่องว่าง', report.available || rows.filter((row) => row.device_status === 'ว่าง'));
+
+    const summarySheet = XLSX.utils.aoa_to_sheet([
+      ['สรุปรายงานทะเบียนเครื่อง'],
+      [`สร้างเมื่อ: ${report.generated_at || '-'}`],
+      [`เครื่องทั้งหมด: ${report.total_devices ?? rows.length}`],
+      [`กำลังยืม: ${report.total_borrowed ?? 0}`],
+      [`เครื่องว่าง: ${report.total_available ?? 0}`],
+      [`ปรับสถานะอัตโนมัติ: ${report.synced_devices || 0} เครื่อง`],
     ]);
-    worksheet['!cols'] = [
-      { wch: 9 },
-      { wch: 28 },
-      { wch: 28 },
-      { wch: 12 },
-      { wch: 24 },
-      { wch: 30 },
-    ];
-    worksheet['!autofilter'] = { ref: `A1:F${rows.length + 1}` };
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'เครื่องว่าง');
-    XLSX.writeFile(workbook, `เครื่องว่าง-${new Date().toISOString().slice(0, 10)}.xlsx`);
-    toast(`ดาวน์โหลดเครื่องว่างล่าสุด ${rows.length} เครื่องแล้ว`);
+    summarySheet['!cols'] = [{ wch: 54 }];
+    XLSX.utils.book_append_sheet(workbook, summarySheet, 'สรุป');
+
+    XLSX.writeFile(workbook, `ทะเบียนเครื่อง-Chromebook-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast(`ดาวน์โหลดทะเบียนเครื่องทั้งหมด ${rows.length} เครื่องแล้ว`);
   } catch (error) {
     toast(error.message, true);
   } finally {
     setButtonBusy(button, false);
   }
+}
+
+function appendDeviceTrackingSheet(workbook, sheetName, rows) {
+  const worksheetRows = [
+    ['ลำดับ', 'เลขที่ทรัพย์สิน', 'รหัสเครื่อง', 'สถานะ', 'รหัสผู้ถือ', 'ผู้ถือปัจจุบัน', 'ชั้น+ห้อง', 'วันที่ยืม'],
+    ...(rows || []).map((row, index) => [
+      index + 1,
+      row.asset_no || '',
+      row.device_key || '',
+      row.device_status || '',
+      row.borrower_id || '',
+      row.full_name || '',
+      row.grade_level || '',
+      row.borrow_date || '',
+    ]),
+  ];
+  const worksheet = XLSX.utils.aoa_to_sheet(worksheetRows);
+  worksheet['!cols'] = [
+    { wch: 9 },
+    { wch: 30 },
+    { wch: 28 },
+    { wch: 13 },
+    { wch: 14 },
+    { wch: 32 },
+    { wch: 14 },
+    { wch: 14 },
+  ];
+  worksheet['!autofilter'] = { ref: `A1:H${worksheetRows.length}` };
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+}
+
+function isBorrowedDeviceRow(row) {
+  const status = String(row.device_status || '').trim();
+  return status === 'ถูกยืม' || status === 'กำลังยืม';
 }
 
 async function loadBulkLoanGradeOptions() {

@@ -773,7 +773,7 @@ select:focus-visible {
 }
 
 .device-report-table {
-  min-width: 920px;
+  min-width: 1180px;
 }
 
 .device-report-table th:nth-child(1),
@@ -782,11 +782,16 @@ select:focus-visible {
   text-align: center;
 }
 
-.device-report-table th:nth-child(5),
-.device-report-table td:nth-child(5),
+.device-report-table th:nth-child(2),
+.device-report-table td:nth-child(2),
+.device-report-table th:nth-child(3),
+.device-report-table td:nth-child(3) {
+  min-width: 220px;
+}
+
 .device-report-table th:nth-child(6),
 .device-report-table td:nth-child(6) {
-  min-width: 160px;
+  min-width: 240px;
 }
 
 .hint-box,
@@ -1376,13 +1381,14 @@ select:focus-visible {
 
   .device-report-table {
     min-width: 0;
-    font-size: 10pt;
+    font-size: 8.5pt;
   }
 
   .device-report-table th,
   .device-report-table td {
     border-bottom: 1px solid #d4d4d8;
-    padding: 5pt 6pt;
+    padding: 4pt 5pt;
+    white-space: normal;
   }
 
   .badge {
