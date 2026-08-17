@@ -472,7 +472,10 @@
                     <option value="">กำลังโหลดระดับชั้น...</option>
                   </select>
                 </label>
-                <button id="downloadUnborrowedStudentsBtn" class="btn-primary" type="button" disabled>ดาวน์โหลดรายชื่อแยกห้อง</button>
+                <div class="student-export-actions">
+                  <button id="downloadAnnualAuditBtn" class="btn-secondary" type="button" disabled>ดาวน์โหลดไฟล์ตรวจประจำปี</button>
+                  <button id="downloadUnborrowedStudentsBtn" class="btn-primary" type="button" disabled>ดาวน์โหลดรายชื่อที่ยังไม่ได้ยืม</button>
+                </div>
                 <span id="unborrowedExportMeta" class="student-export-meta" aria-live="polite"></span>
               </div>
 

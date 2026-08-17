@@ -117,7 +117,9 @@ function bindEvents() {
   document.getElementById('downloadBulkLoanTemplateBtn').addEventListener('click', downloadBulkLoanTemplate);
   document.getElementById('unborrowedGradeSelect').addEventListener('change', (event) => {
     document.getElementById('downloadUnborrowedStudentsBtn').disabled = !event.target.value;
+    document.getElementById('downloadAnnualAuditBtn').disabled = !event.target.value;
   });
+  document.getElementById('downloadAnnualAuditBtn').addEventListener('click', downloadAnnualStudentDeviceAudit);
   document.getElementById('downloadUnborrowedStudentsBtn').addEventListener('click', downloadUnborrowedStudentsWorkbook);
   document.getElementById('importBulkLoansBtn').addEventListener('click', onImportBulkLoans);
   document.getElementById('importStudentsBtn').addEventListener('click', onImportStudents);
@@ -1056,9 +1058,11 @@ function isBorrowedDeviceRow(row) {
 async function loadBulkLoanGradeOptions() {
   const select = document.getElementById('unborrowedGradeSelect');
   const button = document.getElementById('downloadUnborrowedStudentsBtn');
+  const auditButton = document.getElementById('downloadAnnualAuditBtn');
   const current = select.value;
   select.disabled = true;
   button.disabled = true;
+  auditButton.disabled = true;
   select.innerHTML = '<option value="">กำลังโหลดระดับชั้น...</option>';
   try {
     const groups = await api('listGradeGroups');
@@ -1069,11 +1073,89 @@ async function loadBulkLoanGradeOptions() {
     `).join('');
     if (current && (groups || []).some((group) => group.grade_prefix === current)) select.value = current;
     button.disabled = !select.value;
+    auditButton.disabled = !select.value;
   } catch (error) {
     select.innerHTML = '<option value="">โหลดระดับชั้นไม่สำเร็จ</option>';
     toast(error.message, true);
   } finally {
     select.disabled = false;
+  }
+}
+
+async function downloadAnnualStudentDeviceAudit() {
+  const gradePrefix = document.getElementById('unborrowedGradeSelect').value;
+  const button = document.getElementById('downloadAnnualAuditBtn');
+  const meta = document.getElementById('unborrowedExportMeta');
+  if (!gradePrefix) {
+    toast('กรุณาเลือกระดับชั้น', true);
+    return;
+  }
+
+  setButtonBusy(button, true, 'กำลังสร้างไฟล์ตรวจ...');
+  meta.textContent = 'กำลังรวมรายชื่อผู้ยืมและผู้ที่ยังไม่ได้ยืมแยกตามห้อง...';
+  try {
+    const report = await api('listAnnualStudentDeviceAudit', { grade_prefix: gradePrefix });
+    if (!report.total_students) {
+      meta.textContent = `${gradePrefix} ไม่พบรายชื่อนักเรียน`;
+      toast(`ไม่พบรายชื่อนักเรียน ${gradePrefix}`, true);
+      return;
+    }
+
+    const workbook = XLSX.utils.book_new();
+    const usedSheetNames = new Set();
+    (report.rooms || []).forEach((room) => {
+      const worksheetRows = [
+        ['เลขที่', 'รหัสนักเรียน', 'ชื่อ-สกุล', 'ชั้น+ห้อง', 'สถานะยืม', 'เลขที่ทรัพย์สิน', 'รหัสเครื่อง', 'วันที่ยืม', 'หมายเหตุ'],
+        ...(room.students || []).map((student) => [
+          student.no || '',
+          String(student.student_id || ''),
+          student.full_name || '',
+          student.grade_level || room.grade_level || '',
+          student.borrow_status || '',
+          student.asset_no || '',
+          student.device_key || '',
+          student.borrow_date || '',
+          '',
+        ]),
+      ];
+      const worksheet = XLSX.utils.aoa_to_sheet(worksheetRows);
+      worksheet['!cols'] = [
+        { wch: 9 },
+        { wch: 18 },
+        { wch: 32 },
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 28 },
+        { wch: 28 },
+        { wch: 16 },
+        { wch: 30 },
+      ];
+      worksheet['!autofilter'] = { ref: `A1:I${worksheetRows.length}` };
+      XLSX.utils.book_append_sheet(workbook, worksheet, makeUniqueSheetName(room.grade_level, usedSheetNames));
+    });
+
+    const summarySheet = XLSX.utils.aoa_to_sheet([
+      ['สรุปไฟล์ตรวจประจำปี'],
+      [`ระดับชั้น: ${report.grade_prefix}`],
+      [`จำนวนห้อง: ${report.room_count}`],
+      [`นักเรียนทั้งหมด: ${report.total_students}`],
+      [`ยืมแล้ว: ${report.total_borrowed}`],
+      [`ยังไม่ได้ยืม: ${report.total_unborrowed}`],
+      [`สร้างเมื่อ: ${report.generated_at}`],
+      ['เลขที่ในแต่ละห้องเรียงใหม่จากรหัสนักเรียน เพื่อใช้ตรวจสอบรายปีได้ง่าย'],
+    ]);
+    summarySheet['!cols'] = [{ wch: 72 }];
+    XLSX.utils.book_append_sheet(workbook, summarySheet, makeUniqueSheetName('สรุป', usedSheetNames));
+
+    const filenameGrade = gradePrefix.replace(/[\\/:*?"<>|]/g, '-');
+    XLSX.writeFile(workbook, `ตรวจประจำปี-${filenameGrade}-สถานะยืมเครื่อง-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    meta.textContent = `ไฟล์ตรวจประจำปี: ${report.total_students} คน · ยืมแล้ว ${report.total_borrowed} · ยังไม่ได้ยืม ${report.total_unborrowed}`;
+    toast(`สร้างไฟล์ตรวจประจำปี ${gradePrefix} แยก ${report.room_count} ห้องแล้ว`);
+  } catch (error) {
+    meta.textContent = error.message;
+    toast(error.message, true);
+  } finally {
+    setButtonBusy(button, false);
   }
 }
 
@@ -1130,6 +1212,7 @@ async function downloadUnborrowedStudentsWorkbook() {
       [`ระดับชั้น: ${report.grade_prefix}`],
       [`จำนวน: ${report.total_students} คน จาก ${report.room_count} ห้อง`],
       [`สร้างเมื่อ: ${report.generated_at}`],
+      ['เลขที่ในแต่ละห้องเรียงใหม่จากรหัสนักเรียน เพื่อใช้ตรวจสอบรายปีได้ง่าย'],
       ['1. เปิดชีตของแต่ละห้องแล้วกรอกเฉพาะคอลัมน์ “เลขที่ทรัพย์สิน”'],
       ['2. วันที่ยืมเว้นว่างได้ ระบบจะใช้วันที่อัปโหลดไฟล์'],
       ['3. แถวที่ไม่กรอกเลขที่ทรัพย์สินจะถูกข้ามโดยอัตโนมัติ'],

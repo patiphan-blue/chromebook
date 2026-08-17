@@ -81,6 +81,7 @@ function handleRequest(e) {
       listClasses: () => listClasses(),
       listGradeGroups: () => listGradeGroups(),
       listUnborrowedStudentsByGrade: () => listUnborrowedStudentsByGrade(data),
+      listAnnualStudentDeviceAudit: () => listAnnualStudentDeviceAudit(data),
       listAvailableDevices: () => listAvailableDevices(),
       listAvailableDeviceReport: () => listAvailableDeviceReport(),
       listDeviceTrackingReport: () => listDeviceTrackingReport(),
@@ -471,12 +472,13 @@ function getStudentsByClass(data) {
 
   return getRows(SHEETS.STUDENTS)
     .filter((row) => row.grade_level === gradeLevel)
-    .sort((a, b) => Number(a.student_no || 9999) - Number(b.student_no || 9999))
-    .map((row) => ({
+    .sort(compareStudentsById)
+    .map((row, index) => ({
       student_id: row.student_id,
       full_name: row.full_name,
       grade_level: row.grade_level,
-      student_no: row.student_no,
+      student_no: index + 1,
+      original_student_no: row.student_no || '',
       phone: row.phone,
       already_borrowing: activeBorrowerKeys.has('student:' + row.student_id),
     }));
@@ -1399,8 +1401,7 @@ function listUnborrowedStudentsByGrade(data) {
     .sort((a, b) => {
       const classCompare = naturalClassSort(a.grade_level, b.grade_level);
       if (classCompare !== 0) return classCompare;
-      const numberCompare = Number(a.student_no || 9999) - Number(b.student_no || 9999);
-      return numberCompare || String(a.student_id).localeCompare(String(b.student_id), 'th', { numeric: true });
+      return compareStudentsById(a, b);
     })
     .forEach((student) => {
       const gradeLevel = String(student.grade_level || gradePrefix).trim();
@@ -1409,7 +1410,8 @@ function listUnborrowedStudentsByGrade(data) {
         student_id: student.student_id,
         full_name: student.full_name,
         grade_level: gradeLevel,
-        student_no: student.student_no || '',
+        student_no: grouped[gradeLevel].length + 1,
+        original_student_no: student.student_no || '',
       });
     });
 
@@ -1430,11 +1432,82 @@ function listUnborrowedStudentsByGrade(data) {
   };
 }
 
+function listAnnualStudentDeviceAudit(data) {
+  const gradePrefix = required(data.grade_prefix, 'ระดับชั้น');
+  const inventory = getSynchronizedInventory(10000);
+  const devicesByKey = indexBy(inventory.chromebooks, 'device_key');
+  const activeLoanByStudentId = {};
+
+  inventory.transactions.forEach((row) => {
+    if (!isBorrowingStatus(row.status) || getTransactionBorrowerType(row) !== 'student') return;
+    const studentId = String(row.student_id || row.borrower_id || '').trim();
+    if (studentId) activeLoanByStudentId[studentId] = row;
+  });
+
+  const grouped = {};
+  getRows(SHEETS.STUDENTS)
+    .filter((student) => getGradePrefix(student.grade_level) === gradePrefix)
+    .sort((a, b) => {
+      const classCompare = naturalClassSort(a.grade_level, b.grade_level);
+      if (classCompare !== 0) return classCompare;
+      return compareStudentsById(a, b);
+    })
+    .forEach((student) => {
+      const gradeLevel = String(student.grade_level || gradePrefix).trim();
+      const studentId = String(student.student_id || '').trim();
+      const loan = activeLoanByStudentId[studentId] || null;
+      const device = loan ? devicesByKey[loan.device_key] || {} : {};
+      if (!grouped[gradeLevel]) grouped[gradeLevel] = [];
+      grouped[gradeLevel].push({
+        no: grouped[gradeLevel].length + 1,
+        student_id: studentId,
+        full_name: student.full_name || '',
+        grade_level: gradeLevel,
+        borrow_status: loan ? 'ยืมแล้ว' : 'ยังไม่ได้ยืม',
+        asset_no: loan ? device.asset_no || '' : '',
+        device_key: loan ? loan.device_key || '' : '',
+        borrow_date: loan ? loan.borrow_date || '' : '',
+        original_student_no: student.student_no || '',
+      });
+    });
+
+  const rooms = Object.keys(grouped)
+    .sort(naturalClassSort)
+    .map((gradeLevel) => {
+      const students = grouped[gradeLevel];
+      const borrowedCount = students.filter((student) => student.borrow_status === 'ยืมแล้ว').length;
+      return {
+        grade_level: gradeLevel,
+        student_count: students.length,
+        borrowed_count: borrowedCount,
+        unborrowed_count: students.length - borrowedCount,
+        students,
+      };
+    });
+
+  return {
+    grade_prefix: gradePrefix,
+    generated_at: nowText(),
+    total_students: rooms.reduce((sum, room) => sum + room.student_count, 0),
+    total_borrowed: rooms.reduce((sum, room) => sum + room.borrowed_count, 0),
+    total_unborrowed: rooms.reduce((sum, room) => sum + room.unborrowed_count, 0),
+    room_count: rooms.length,
+    rooms,
+  };
+}
+
 function getGradePrefix(value) {
   const text = String(value || '').replace(/\s+/g, '').trim();
   if (!text) return '';
   const match = text.match(/^(.+?\d+)(?:[/\\-]|ห้อง)/i);
   return match ? match[1] : text;
+}
+
+function compareStudentsById(a, b) {
+  return String(a.student_id || '').localeCompare(String(b.student_id || ''), 'th', {
+    numeric: true,
+    sensitivity: 'base',
+  });
 }
 
 function listAvailableDevices() {

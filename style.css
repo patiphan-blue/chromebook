@@ -568,6 +568,13 @@ select:focus-visible {
   margin-top: 0.35rem;
 }
 
+.student-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+}
+
 .student-export-meta {
   grid-column: 1 / -1;
   min-height: 1.25rem;
@@ -1237,8 +1244,13 @@ select:focus-visible {
   }
 
   .student-export-copy,
+  .student-export-actions,
   .student-export-meta {
     grid-column: 1 / -1;
+  }
+
+  .student-export-actions {
+    justify-content: flex-start;
   }
 }
 
@@ -1337,8 +1349,14 @@ select:focus-visible {
   }
 
   .student-export-copy,
+  .student-export-actions,
   .student-export-meta {
     grid-column: auto;
+  }
+
+  .student-export-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 
