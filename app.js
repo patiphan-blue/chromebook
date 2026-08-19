@@ -316,7 +316,7 @@ function buildDeviceTrackingFallback(availableDevices, tables) {
 
 function renderActiveDashboardTable() {
   const type = state.activeDashboardTable;
-  const filteredRows = filterDashboardRows(state.dashboardTables[type] || [], type);
+  const filteredRows = sortDashboardRowsForView(filterDashboardRows(state.dashboardTables[type] || [], type), type);
   const total = filteredRows.length;
   const pageSize = state.dashboardPageSize || 50;
   const totalPages = Math.max(Math.ceil(total / pageSize), 1);
@@ -439,6 +439,15 @@ function filterDashboardRows(rows, type) {
         : [row.borrower_id, row.full_name, row.grade_level, row.device_key, row.status];
     return normalizeSearch(haystack.join(' ')).includes(q);
   });
+}
+
+function sortDashboardRowsForView(rows, type) {
+  if (!state.dashboardClassFilter || (type !== 'students' && type !== 'returned')) return rows;
+  return rows.slice().sort((a, b) => String(a.borrower_id || '').localeCompare(
+    String(b.borrower_id || ''),
+    'th',
+    { numeric: true, sensitivity: 'base' }
+  ));
 }
 
 function renderCharts(dashboard) {
