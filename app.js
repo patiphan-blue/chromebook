@@ -13,6 +13,9 @@ const state = {
   assignClassStudents: [],
   assignStudentSearch: '',
   dashboardTables: { students: [], teachers: [], returned: [], available: [], devices: [] },
+  dashboardTablesLoading: false,
+  dashboardTablesError: '',
+  dashboardLoadToken: 0,
   activeDashboardTable: 'students',
   dashboardSearch: '',
   dashboardClassFilter: '',
@@ -239,13 +242,15 @@ function showAdminPage(page) {
 }
 
 async function loadPublicDashboard() {
+  const loadToken = ++state.dashboardLoadToken;
   renderDashboardLoading();
+  state.dashboardTablesLoading = true;
+  state.dashboardTablesError = '';
   try {
-    const [dashboard, tables] = await Promise.all([
-      api('dashboard'),
-      api('dashboardTables'),
-    ]);
+    const dashboard = await fetchDashboardSummary();
+    if (loadToken !== state.dashboardLoadToken) return;
     const availableDevices = dashboard.available_devices || [];
+    const deviceTracking = Array.isArray(dashboard.device_tracking) ? dashboard.device_tracking : [];
 
     document.getElementById('totalDevices').textContent = dashboard.total_devices || 0;
     document.getElementById('availableDevices').textContent = dashboard.available || 0;
@@ -253,20 +258,20 @@ async function loadPublicDashboard() {
     document.getElementById('repairDevices').textContent = dashboard.repairing || 0;
     document.getElementById('totalStudents').textContent = dashboard.total_students || 0;
 
-    const deviceTracking = Array.isArray(dashboard.device_tracking)
-      ? dashboard.device_tracking
-      : buildDeviceTrackingFallback(availableDevices, tables);
     state.dashboardTables = {
-      students: tables.students || [],
-      teachers: tables.teachers || [],
-      returned: tables.returned || [],
+      students: [],
+      teachers: [],
+      returned: [],
       available: availableDevices || [],
       devices: deviceTracking,
     };
     renderCharts(dashboard);
     renderDashboardClassFilter();
     renderActiveDashboardTable();
+    loadDashboardTablesInBackground(loadToken, dashboard, availableDevices);
   } catch (error) {
+    state.dashboardTablesLoading = false;
+    state.dashboardTablesError = error.message || 'โหลดข้อมูลไม่สำเร็จ';
     const meta = document.getElementById('dashboardTableMeta');
     const tbody = document.getElementById('dashboardTableRows');
     if (meta) meta.textContent = 'โหลดข้อมูลไม่สำเร็จ';
@@ -274,6 +279,46 @@ async function loadPublicDashboard() {
       tbody.innerHTML = `<tr><td colspan="7" class="text-center text-slate-500">${escapeHtml(error.message || 'กรุณาลองรีเฟรชอีกครั้ง')}</td></tr>`;
     }
     toast(error.message, true);
+  }
+}
+
+async function fetchDashboardSummary() {
+  try {
+    return await api('dashboardSummary');
+  } catch (error) {
+    if (String(error.message || '').includes('Invalid action: dashboardSummary')) {
+      return api('dashboard');
+    }
+    throw error;
+  }
+}
+
+async function loadDashboardTablesInBackground(loadToken, dashboard, availableDevices) {
+  try {
+    const tables = await api('dashboardTables');
+    if (loadToken !== state.dashboardLoadToken) return;
+    const deviceTracking = Array.isArray(dashboard.device_tracking)
+      ? dashboard.device_tracking
+      : buildDeviceTrackingFallback(availableDevices, tables);
+
+    state.dashboardTables = {
+      students: tables.students || [],
+      teachers: tables.teachers || [],
+      returned: tables.returned || [],
+      available: availableDevices || [],
+      devices: deviceTracking,
+    };
+    state.dashboardTablesLoading = false;
+    state.dashboardTablesError = '';
+    renderCharts(dashboard);
+    renderDashboardClassFilter();
+    renderActiveDashboardTable();
+  } catch (error) {
+    if (loadToken !== state.dashboardLoadToken) return;
+    state.dashboardTablesLoading = false;
+    state.dashboardTablesError = error.message || 'โหลดตารางติดตามไม่สำเร็จ';
+    renderActiveDashboardTable();
+    toast(state.dashboardTablesError, true);
   }
 }
 
@@ -337,6 +382,28 @@ function renderActiveDashboardTable() {
       ? '<tr><th>เลขที่ทรัพย์สิน</th><th>รหัสเครื่อง</th><th>สถานะ</th><th>รหัสผู้ถือ</th><th>ผู้ถือปัจจุบัน</th><th>ชั้น+ห้อง</th><th>วันที่ยืม</th></tr>'
       : '<tr><th>รหัส</th><th>ชื่อ-สกุล</th><th>ชั้น+ห้อง</th><th>วันยืม</th><th>วันคืน</th><th>สถานะ</th><th>เลขเครื่อง</th></tr>';
   tbody.innerHTML = '';
+  if (classFilter) {
+    classFilter.classList.toggle('hidden', type === 'teachers' || type === 'available' || type === 'devices');
+  }
+  const colspan = type === 'available' ? 3 : 7;
+  const tableNeedsSlowData = type === 'students' || type === 'teachers' || type === 'returned' || (type === 'devices' && !state.dashboardTables.devices.length);
+  if (state.dashboardTablesLoading && tableNeedsSlowData) {
+    meta.textContent = 'โหลดสรุปแล้ว กำลังโหลดตารางติดตาม...';
+    if (pageInfo) pageInfo.textContent = '0-0 จาก 0';
+    if (prevButton) prevButton.disabled = true;
+    if (nextButton) nextButton.disabled = true;
+    setTableLoading('dashboardTableRows', colspan, 'กำลังโหลดตารางติดตาม...');
+    return;
+  }
+  if (state.dashboardTablesError && tableNeedsSlowData) {
+    meta.textContent = 'โหลดตารางติดตามไม่สำเร็จ';
+    if (pageInfo) pageInfo.textContent = '0-0 จาก 0';
+    if (prevButton) prevButton.disabled = true;
+    if (nextButton) nextButton.disabled = true;
+    tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-center text-slate-500">${escapeHtml(state.dashboardTablesError)}</td></tr>`;
+    return;
+  }
+
   meta.textContent = `แสดง ${rows.length} จาก ${total} รายการ`;
   if (pageInfo) {
     const from = total ? startIndex + 1 : 0;
@@ -345,9 +412,6 @@ function renderActiveDashboardTable() {
   }
   if (prevButton) prevButton.disabled = state.dashboardPage <= 1;
   if (nextButton) nextButton.disabled = state.dashboardPage >= totalPages;
-  if (classFilter) {
-    classFilter.classList.toggle('hidden', type === 'teachers' || type === 'available' || type === 'devices');
-  }
 
   rows.forEach((row) => {
     if (type === 'devices') {
@@ -390,7 +454,7 @@ function renderActiveDashboardTable() {
   });
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="${type === 'available' ? 3 : 7}" class="text-center text-slate-500">ไม่พบข้อมูล</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-center text-slate-500">ไม่พบข้อมูล</td></tr>`;
   }
 }
 

@@ -66,6 +66,7 @@ function handleRequest(e) {
     const routes = {
       ping: () => ({ ok: true, message: 'Chromebook API is ready' }),
       login: () => login(data),
+      dashboardSummary: () => getDashboardSummary(),
       dashboard: () => getDashboard(),
       dashboardTables: () => getDashboardTables(),
       assignDevice: () => assignDevice(data),
@@ -236,6 +237,34 @@ function getDashboard() {
       .map((row) => ({ device_key: row.device_key, asset_no: row.asset_no })),
     device_tracking: buildDeviceTrackingRows(chromebooks, transactions, students, teachers),
     recent_transactions: transactions.slice(-10).reverse(),
+  };
+}
+
+function getDashboardSummary() {
+  const inventory = getSynchronizedInventory(10000);
+  const chromebooks = inventory.chromebooks;
+  const transactions = inventory.transactions;
+  const students = getRows(SHEETS.STUDENTS);
+  const active = transactions.filter((row) => isBorrowingStatus(row.status));
+
+  const statusCounts = chromebooks.reduce((acc, row) => {
+    const status = normalizeDeviceStatus(row.device_status) || 'ไม่ระบุ';
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    total_students: students.length,
+    total_devices: chromebooks.length,
+    available: statusCounts[STATUS.AVAILABLE] || 0,
+    borrowed: (statusCounts[STATUS.BORROWED_DEVICE] || 0) + (statusCounts[STATUS.BORROWING] || 0),
+    repairing: statusCounts[STATUS.REPAIR] || 0,
+    active_transactions: active.length,
+    status_counts: statusCounts,
+    synced_devices: inventory.synced_devices,
+    available_devices: chromebooks
+      .filter((row) => normalizeDeviceStatus(row.device_status) === STATUS.AVAILABLE)
+      .map((row) => ({ device_key: row.device_key, asset_no: row.asset_no })),
   };
 }
 
