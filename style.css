@@ -104,6 +104,33 @@ select:focus-visible {
   border-radius: 16px;
 }
 
+.mobile-topbar {
+  transition: transform 180ms ease, opacity 180ms ease, padding-top 180ms ease;
+  will-change: transform;
+}
+
+.mobile-topbar .mobile-nav {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(212, 212, 216, 0.82);
+  backdrop-filter: saturate(1.15) blur(14px);
+  -webkit-backdrop-filter: saturate(1.15) blur(14px);
+}
+
+body.mobile-header-compact .mobile-topbar {
+  padding-top: 0.5rem;
+}
+
+body.mobile-header-compact .mobile-topbar .mobile-nav {
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 4px 8px rgba(24, 24, 27, 0.03);
+}
+
+body.mobile-header-hidden .mobile-topbar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(-100% - 1rem));
+}
+
 .sidebar-shell {
   border-radius: 20px;
 }
@@ -1295,6 +1322,10 @@ select:focus-visible {
     min-height: 64px;
     border-radius: 14px;
     padding-block: 0.75rem;
+  }
+
+  .mobile-topbar {
+    padding-inline: 0.75rem;
   }
 
   .mobile-nav {

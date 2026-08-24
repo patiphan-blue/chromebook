@@ -33,6 +33,7 @@ const NOTE_KEYS = ['หมายเหตุ', 'note'];
 
 document.addEventListener('DOMContentLoaded', () => {
   bindEvents();
+  bindMobileTopbar();
   setTodayDefaults();
   renderAuthState();
   loadPublicDashboard();
@@ -55,6 +56,7 @@ function bindEvents() {
       if (button.dataset.scrollTarget === 'publicRequestSection') {
         setBorrowRequestOpen(true);
       }
+      document.body.classList.remove('mobile-header-hidden');
       document.getElementById(button.dataset.scrollTarget).scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
@@ -144,6 +146,43 @@ function bindEvents() {
   document.querySelectorAll('.assign-mode-btn').forEach((button) => {
     button.addEventListener('click', () => showAssignMode(button.dataset.assignMode));
   });
+}
+
+function bindMobileTopbar() {
+  const topbar = document.querySelector('.mobile-topbar');
+  if (!topbar) return;
+
+  const mobileQuery = window.matchMedia('(max-width: 1023px)');
+  let lastScrollY = window.scrollY;
+  let ticking = false;
+
+  const updateTopbar = () => {
+    const currentY = Math.max(window.scrollY, 0);
+    const scrollingDown = currentY > lastScrollY + 8;
+    const scrollingUp = currentY < lastScrollY - 8;
+
+    document.body.classList.toggle('mobile-header-compact', mobileQuery.matches && currentY > 24);
+
+    if (mobileQuery.matches && scrollingDown && currentY > 160) {
+      document.body.classList.add('mobile-header-hidden');
+    } else if (!mobileQuery.matches || scrollingUp || currentY < 80) {
+      document.body.classList.remove('mobile-header-hidden');
+    }
+
+    lastScrollY = currentY;
+    ticking = false;
+  };
+
+  const requestTopbarUpdate = () => {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(updateTopbar);
+  };
+
+  window.addEventListener('scroll', requestTopbarUpdate, { passive: true });
+  mobileQuery.addEventListener('change', updateTopbar);
+  topbar.addEventListener('focusin', () => document.body.classList.remove('mobile-header-hidden'));
+  updateTopbar();
 }
 
 function setBorrowRequestOpen(isOpen) {
