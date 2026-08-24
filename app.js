@@ -416,14 +416,14 @@ function renderActiveDashboardTable() {
   rows.forEach((row) => {
     if (type === 'devices') {
       tbody.insertAdjacentHTML('beforeend', `
-        <tr class="${dashboardRowClass(type, row)}">
-          <td><strong>${escapeHtml(row.asset_no || '-')}</strong></td>
-          <td>${escapeHtml(row.device_key || '-')}</td>
-          <td>${statusBadge(row.device_status)}</td>
-          <td>${escapeHtml(row.borrower_id || '-')}</td>
-          <td>${escapeHtml(row.full_name || '-')}</td>
-          <td>${escapeHtml(row.grade_level || '-')}</td>
-          <td>${escapeHtml(row.borrow_date || '-')}</td>
+        <tr class="${dashboardRowClass(type, row)} dashboard-card-row">
+          <td data-label="เลขที่ทรัพย์สิน"><strong>${escapeHtml(row.asset_no || '-')}</strong></td>
+          <td data-label="รหัสเครื่อง">${escapeHtml(row.device_key || '-')}</td>
+          <td data-label="สถานะ">${statusBadge(row.device_status)}</td>
+          <td data-label="รหัสผู้ถือ">${escapeHtml(row.borrower_id || '-')}</td>
+          <td data-label="ผู้ถือปัจจุบัน">${escapeHtml(row.full_name || '-')}</td>
+          <td data-label="ชั้น+ห้อง">${escapeHtml(row.grade_level || '-')}</td>
+          <td data-label="วันที่ยืม">${escapeHtml(row.borrow_date || '-')}</td>
         </tr>
       `);
       return;
@@ -431,24 +431,24 @@ function renderActiveDashboardTable() {
 
     if (type === 'available') {
       tbody.insertAdjacentHTML('beforeend', `
-        <tr class="row-ready">
-          <td>${escapeHtml(row.device_key || '-')}</td>
-          <td>${escapeHtml(row.asset_no || '-')}</td>
-          <td>${statusBadge('ว่าง')}</td>
+        <tr class="row-ready dashboard-card-row">
+          <td data-label="เลขเครื่อง">${escapeHtml(row.device_key || '-')}</td>
+          <td data-label="เลขที่ทรัพย์สิน">${escapeHtml(row.asset_no || '-')}</td>
+          <td data-label="สถานะ">${statusBadge('ว่าง')}</td>
         </tr>
       `);
       return;
     }
 
     tbody.insertAdjacentHTML('beforeend', `
-      <tr class="${dashboardRowClass(type, row)}">
-        <td>${escapeHtml(row.borrower_id || '-')}</td>
-        <td>${escapeHtml(row.full_name || '-')}</td>
-        <td>${escapeHtml(type === 'teachers' ? 'ครู' : row.grade_level || '-')}</td>
-        <td>${escapeHtml(row.borrow_date || '-')}</td>
-        <td>${escapeHtml(row.return_date || '-')}</td>
-        <td>${statusBadge(row.status)}</td>
-        <td>${escapeHtml(row.device_key || '-')}</td>
+      <tr class="${dashboardRowClass(type, row)} dashboard-card-row">
+        <td data-label="รหัส">${escapeHtml(row.borrower_id || '-')}</td>
+        <td data-label="ชื่อ-สกุล">${escapeHtml(row.full_name || '-')}</td>
+        <td data-label="ชั้น+ห้อง">${escapeHtml(type === 'teachers' ? 'ครู' : row.grade_level || '-')}</td>
+        <td data-label="วันยืม">${escapeHtml(row.borrow_date || '-')}</td>
+        <td data-label="วันคืน">${escapeHtml(row.return_date || '-')}</td>
+        <td data-label="สถานะ">${statusBadge(row.status)}</td>
+        <td data-label="เลขเครื่อง">${escapeHtml(row.device_key || '-')}</td>
       </tr>
     `);
   });

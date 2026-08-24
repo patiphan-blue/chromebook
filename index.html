@@ -35,16 +35,16 @@
     </aside>
 
     <header class="sticky top-0 z-30 px-4 pt-4 sm:px-6 lg:hidden">
-      <div class="nav-pill mx-auto flex min-h-16 max-w-7xl items-center justify-between px-4 py-2 sm:px-6">
-        <div class="flex items-center gap-3">
+      <div class="nav-pill mobile-nav mx-auto flex min-h-16 max-w-7xl items-center justify-between px-4 py-2 sm:px-6">
+        <div class="mobile-brand flex items-center gap-3">
           <img class="school-logo mobile" src="https://i.postimg.cc/mZ9BsgXT/loko-pay.jpg" alt="โลโก้โรงเรียนปายวิทยาคาร">
-          <div>
+          <div class="mobile-brand-copy">
             <p class="eyebrow"><span></span> Chromebook Borrowing</p>
             <h1 class="text-base font-bold text-stone-950 sm:text-lg">โรงเรียนปายวิทยาคาร</h1>
             <p class="text-xs font-semibold text-stone-500">ระบบยืม-คืนและติดตาม Chromebook</p>
           </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="mobile-actions flex items-center gap-2">
           <button id="mobileRefreshBtn" class="btn-ghost">รีเฟรช</button>
           <button id="mobileLoginBtn" class="btn-primary">แอดมิน</button>
           <button id="mobileLogoutBtn" class="btn-ghost hidden">ออก</button>
@@ -205,8 +205,8 @@
             </div>
           </div>
         </div>
-        <div class="table-scroll overflow-x-auto">
-          <table class="table">
+        <div class="table-scroll dashboard-ledger-scroll overflow-x-auto">
+          <table class="table dashboard-ledger-table">
             <thead id="dashboardTableHead"></thead>
             <tbody id="dashboardTableRows"></tbody>
           </table>

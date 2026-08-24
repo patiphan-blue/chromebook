@@ -243,6 +243,22 @@ select:focus-visible {
   flex: 0 0 auto;
 }
 
+.mobile-brand,
+.mobile-brand-copy {
+  min-width: 0;
+}
+
+.mobile-brand-copy h1,
+.mobile-brand-copy p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-actions {
+  flex: 0 0 auto;
+}
+
 .input {
   width: 100%;
   min-height: 42px;
@@ -1281,6 +1297,10 @@ select:focus-visible {
     padding-block: 0.75rem;
   }
 
+  .mobile-nav {
+    gap: 0.75rem;
+  }
+
   .hero-panel {
     padding: 1rem;
   }
@@ -1295,8 +1315,91 @@ select:focus-visible {
   .tab-btn,
   .table-tab,
   .assign-mode-btn {
+    min-height: 44px;
     padding-inline: 0.72rem;
     font-size: 0.875rem;
+  }
+
+  .input {
+    min-height: 44px;
+  }
+
+  .dashboard-table-tabs {
+    flex-wrap: nowrap;
+    margin-inline: -0.1rem;
+    overflow-x: auto;
+    padding: 0.05rem 0.1rem 0.35rem;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .dashboard-ledger-scroll {
+    max-height: none;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .dashboard-ledger-table {
+    min-width: 0;
+    border-spacing: 0;
+  }
+
+  .dashboard-ledger-table thead {
+    display: none;
+  }
+
+  .dashboard-ledger-table tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .dashboard-ledger-table tbody tr.dashboard-card-row {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.85rem;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  }
+
+  .dashboard-ledger-table tbody tr.dashboard-card-row.row-borrowing {
+    background: rgba(255, 247, 237, 0.92);
+  }
+
+  .dashboard-ledger-table tbody tr.dashboard-card-row.row-ready {
+    background: rgba(236, 253, 245, 0.88);
+  }
+
+  .dashboard-ledger-table tbody tr.dashboard-card-row.row-returned {
+    background: rgba(248, 250, 252, 0.95);
+  }
+
+  .dashboard-ledger-table tbody tr.dashboard-card-row.row-repair {
+    background: rgba(254, 242, 242, 0.92);
+  }
+
+  .dashboard-ledger-table tbody tr.dashboard-card-row td {
+    display: grid;
+    grid-template-columns: minmax(6.75rem, 0.45fr) minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.12rem 0;
+    border: 0;
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  .dashboard-ledger-table tbody tr.dashboard-card-row td::before {
+    content: attr(data-label);
+    color: #57534e;
+    font-weight: 850;
+  }
+
+  .dashboard-ledger-table tbody tr.dashboard-card-row td:first-child {
+    font-size: 1rem;
+    font-weight: 900;
   }
 
   .metric-card {
@@ -1357,6 +1460,34 @@ select:focus-visible {
   .student-export-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .mobile-nav {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .mobile-brand,
+  .mobile-actions {
+    width: 100%;
+  }
+
+  .mobile-actions {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 380px) {
+  .mobile-brand-copy .eyebrow,
+  .mobile-brand-copy p:last-child {
+    display: none;
+  }
+
+  .dashboard-ledger-table tbody tr.dashboard-card-row td {
+    grid-template-columns: 1fr;
+    gap: 0.12rem;
   }
 }
 
