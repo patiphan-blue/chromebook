@@ -8,7 +8,7 @@
   <link rel="apple-touch-icon" href="https://i.postimg.cc/mZ9BsgXT/loko-pay.jpg">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=20260824-mobile-topbar">
+  <link rel="stylesheet" href="style.css?v=20260824-fast-dashboard">
 </head>
 <body class="text-stone-950">
   <a class="skip-link" href="#mainContent">ข้ามไปยังเนื้อหาหลัก</a>
@@ -599,6 +599,18 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-  <script src="app.js?v=20260824-mobile-topbar"></script>
+  <dialog id="repairDialog" aria-labelledby="repairTitle" style="width:min(560px,94vw);max-height:90dvh;overflow:auto;border:1px solid #ddd;border-radius:8px;padding:24px">
+    <form id="repairForm" class="space-y-4">
+      <h2 id="repairTitle" class="text-xl font-bold">จัดการซ่อม Chromebook</h2>
+      <p id="repairDevice" style="overflow-wrap:anywhere"></p>
+      <p id="repairStatus" role="status"></p>
+      <label class="block">รายการ<select id="repairEvent" class="form-input w-full"><option value="start">แจ้งเสีย / ส่งซ่อม</option><option value="complete">ซ่อมเสร็จ</option></select></label>
+      <label class="block">อาการเสีย / ผลการซ่อม<textarea id="repairNote" class="form-input w-full" rows="3" maxlength="2000" required></textarea></label>
+      <div class="flex gap-3"><button id="repairSave" type="submit" class="btn-primary">บันทึก</button><button id="repairClose" type="button" class="btn-secondary">ปิด</button></div>
+      <h3 class="font-bold">ประวัติการซ่อม</h3>
+      <div id="repairHistory" style="overflow-wrap:anywhere" aria-live="polite"></div>
+    </form>
+  </dialog>
+  <script src="app.js?v=20260907-repairs"></script>
 </body>
 </html>

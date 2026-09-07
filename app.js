@@ -1,5 +1,6 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbzZgri1saLnzCrQ2WPyCIeqWMA_r9L0h9Faodi8WTczJjqp4BwTVK9-AKnM0yMFvhrJ/exec";
 const IMPORT_CHUNK_SIZE = 400;
+const DASHBOARD_CACHE_KEY = 'chromebook_dashboard_snapshot_v1';
 
 const state = {
   admin: JSON.parse(localStorage.getItem('chromebook_admin') || 'null'),
@@ -16,6 +17,8 @@ const state = {
   dashboardTablesLoading: false,
   dashboardTablesError: '',
   dashboardLoadToken: 0,
+  dashboardHasVisibleData: false,
+  dashboardCacheTime: '',
   activeDashboardTable: 'students',
   dashboardSearch: '',
   dashboardClassFilter: '',
@@ -36,6 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
   bindMobileTopbar();
   setTodayDefaults();
   renderAuthState();
+  hydrateDashboardFromCache();
   loadPublicDashboard();
 });
 
@@ -209,6 +213,7 @@ function setTodayDefaults() {
 }
 
 function renderAuthState() {
+  renderActiveDashboardTable();
   const loggedIn = Boolean(state.admin);
   document.getElementById('adminPanel').classList.toggle('hidden', !loggedIn);
   document.getElementById('openLoginBtn').classList.toggle('hidden', loggedIn);
@@ -282,7 +287,11 @@ function showAdminPage(page) {
 
 async function loadPublicDashboard() {
   const loadToken = ++state.dashboardLoadToken;
-  renderDashboardLoading();
+  if (!state.dashboardHasVisibleData) {
+    renderDashboardLoading();
+  } else {
+    renderDashboardRefreshing();
+  }
   state.dashboardTablesLoading = true;
   state.dashboardTablesError = '';
   try {
@@ -290,31 +299,26 @@ async function loadPublicDashboard() {
     if (loadToken !== state.dashboardLoadToken) return;
     const availableDevices = dashboard.available_devices || [];
     const deviceTracking = Array.isArray(dashboard.device_tracking) ? dashboard.device_tracking : [];
-
-    document.getElementById('totalDevices').textContent = dashboard.total_devices || 0;
-    document.getElementById('availableDevices').textContent = dashboard.available || 0;
-    document.getElementById('borrowedDevices').textContent = dashboard.borrowed || 0;
-    document.getElementById('repairDevices').textContent = dashboard.repairing || 0;
-    document.getElementById('totalStudents').textContent = dashboard.total_students || 0;
+    const previousTables = state.dashboardTables || {};
 
     state.dashboardTables = {
-      students: [],
-      teachers: [],
-      returned: [],
+      students: previousTables.students || [],
+      teachers: previousTables.teachers || [],
+      returned: previousTables.returned || [],
       available: availableDevices || [],
-      devices: deviceTracking,
+      devices: deviceTracking.length ? deviceTracking : previousTables.devices || [],
     };
-    renderCharts(dashboard);
-    renderDashboardClassFilter();
-    renderActiveDashboardTable();
+    renderDashboardSummary(dashboard);
+    cacheDashboardSnapshot(dashboard, state.dashboardTables);
     loadDashboardTablesInBackground(loadToken, dashboard, availableDevices);
   } catch (error) {
     state.dashboardTablesLoading = false;
     state.dashboardTablesError = error.message || 'โหลดข้อมูลไม่สำเร็จ';
+    document.body.classList.remove('dashboard-loading', 'dashboard-refreshing');
     const meta = document.getElementById('dashboardTableMeta');
     const tbody = document.getElementById('dashboardTableRows');
-    if (meta) meta.textContent = 'โหลดข้อมูลไม่สำเร็จ';
-    if (tbody) {
+    if (meta) meta.textContent = state.dashboardHasVisibleData ? 'แสดงข้อมูลล่าสุดที่เคยโหลดไว้' : 'โหลดข้อมูลไม่สำเร็จ';
+    if (tbody && !state.dashboardHasVisibleData) {
       tbody.innerHTML = `<tr><td colspan="7" class="text-center text-slate-500">${escapeHtml(error.message || 'กรุณาลองรีเฟรชอีกครั้ง')}</td></tr>`;
     }
     toast(error.message, true);
@@ -329,6 +333,58 @@ async function fetchDashboardSummary() {
       return api('dashboard');
     }
     throw error;
+  }
+}
+
+function renderDashboardSummary(dashboard) {
+  document.body.classList.remove('dashboard-loading', 'dashboard-refreshing');
+  document.getElementById('totalDevices').textContent = dashboard.total_devices || 0;
+  document.getElementById('availableDevices').textContent = dashboard.available || 0;
+  document.getElementById('borrowedDevices').textContent = dashboard.borrowed || 0;
+  document.getElementById('repairDevices').textContent = dashboard.repairing || 0;
+  document.getElementById('totalStudents').textContent = dashboard.total_students || 0;
+
+  state.dashboardHasVisibleData = true;
+  renderCharts(dashboard);
+  renderDashboardClassFilter();
+  renderActiveDashboardTable();
+}
+
+function hydrateDashboardFromCache() {
+  const snapshot = readDashboardCache();
+  if (!snapshot || !snapshot.dashboard) return false;
+
+  state.dashboardTables = Object.assign(
+    { students: [], teachers: [], returned: [], available: [], devices: [] },
+    snapshot.dashboardTables || {}
+  );
+  state.dashboardCacheTime = snapshot.saved_at || '';
+  renderDashboardSummary(snapshot.dashboard);
+  return true;
+}
+
+function readDashboardCache() {
+  try {
+    const raw = localStorage.getItem(DASHBOARD_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (error) {
+    localStorage.removeItem(DASHBOARD_CACHE_KEY);
+    return null;
+  }
+}
+
+function cacheDashboardSnapshot(dashboard, dashboardTables) {
+  try {
+    const snapshot = {
+      saved_at: new Date().toISOString(),
+      dashboard,
+      dashboardTables,
+    };
+    localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(snapshot));
+    state.dashboardCacheTime = snapshot.saved_at;
+  } catch (error) {
+    // Cache is only a speed boost; full functionality still works without it.
   }
 }
 
@@ -349,9 +405,8 @@ async function loadDashboardTablesInBackground(loadToken, dashboard, availableDe
     };
     state.dashboardTablesLoading = false;
     state.dashboardTablesError = '';
-    renderCharts(dashboard);
-    renderDashboardClassFilter();
-    renderActiveDashboardTable();
+    renderDashboardSummary(dashboard);
+    cacheDashboardSnapshot(dashboard, state.dashboardTables);
   } catch (error) {
     if (loadToken !== state.dashboardLoadToken) return;
     state.dashboardTablesLoading = false;
@@ -426,7 +481,7 @@ function renderActiveDashboardTable() {
   }
   const colspan = type === 'available' ? 3 : 7;
   const tableNeedsSlowData = type === 'students' || type === 'teachers' || type === 'returned' || (type === 'devices' && !state.dashboardTables.devices.length);
-  if (state.dashboardTablesLoading && tableNeedsSlowData) {
+  if (state.dashboardTablesLoading && tableNeedsSlowData && !rows.length) {
     meta.textContent = 'โหลดสรุปแล้ว กำลังโหลดตารางติดตาม...';
     if (pageInfo) pageInfo.textContent = '0-0 จาก 0';
     if (prevButton) prevButton.disabled = true;
@@ -443,7 +498,9 @@ function renderActiveDashboardTable() {
     return;
   }
 
-  meta.textContent = `แสดง ${rows.length} จาก ${total} รายการ`;
+  meta.textContent = state.dashboardTablesLoading && tableNeedsSlowData
+    ? `แสดง ${rows.length} จาก ${total} รายการ · กำลังอัปเดตล่าสุด...`
+    : `แสดง ${rows.length} จาก ${total} รายการ`;
   if (pageInfo) {
     const from = total ? startIndex + 1 : 0;
     const to = total ? startIndex + rows.length : 0;
@@ -456,7 +513,7 @@ function renderActiveDashboardTable() {
     if (type === 'devices') {
       tbody.insertAdjacentHTML('beforeend', `
         <tr class="${dashboardRowClass(type, row)} dashboard-card-row">
-          <td data-label="เลขที่ทรัพย์สิน"><strong>${escapeHtml(row.asset_no || '-')}</strong></td>
+          <td data-label="เลขที่ทรัพย์สิน"><strong>${escapeHtml(row.asset_no || '-')}</strong>${state.admin ? `<button type="button" class="btn-secondary repair-open" data-device="${escapeHtml(row.device_key)}">จัดการซ่อม</button>` : ''}</td>
           <td data-label="รหัสเครื่อง">${escapeHtml(row.device_key || '-')}</td>
           <td data-label="สถานะ">${statusBadge(row.device_status)}</td>
           <td data-label="รหัสผู้ถือ">${escapeHtml(row.borrower_id || '-')}</td>
@@ -863,8 +920,22 @@ async function loadBorrowers() {
 function renderDashboardLoading() {
   const tbody = document.getElementById('dashboardTableRows');
   const meta = document.getElementById('dashboardTableMeta');
+  document.body.classList.add('dashboard-loading');
+  document.body.classList.remove('dashboard-refreshing');
+  ['totalDevices', 'availableDevices', 'borrowedDevices', 'repairDevices', 'totalStudents'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '...';
+  });
   if (meta) meta.textContent = 'กำลังโหลดข้อมูลล่าสุด...';
   if (tbody) setTableLoading('dashboardTableRows', state.activeDashboardTable === 'available' ? 3 : 7, 'กำลังโหลดตารางติดตาม...');
+}
+
+function renderDashboardRefreshing() {
+  const meta = document.getElementById('dashboardTableMeta');
+  document.body.classList.remove('dashboard-loading');
+  document.body.classList.add('dashboard-refreshing');
+  if (meta) meta.textContent = 'แสดงข้อมูลล่าสุดที่เคยโหลดไว้ · กำลังอัปเดต...';
+  renderActiveDashboardTable();
 }
 
 function renderAvailableDeviceLoading() {
@@ -1854,6 +1925,55 @@ async function api(action, data = {}) {
   if (!result.success) throw new Error(result.message || 'เกิดข้อผิดพลาด');
   return result.data;
 }
+
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('.repair-open');
+  if (!button || !state.admin) return;
+  const dialog = document.getElementById('repairDialog');
+  const row = state.dashboardTables.devices.find((item) => item.device_key === button.dataset.device);
+  if (!row) return;
+  dialog.dataset.device = row.device_key;
+  document.getElementById('repairDevice').textContent = `${row.asset_no || '-'} · ${row.device_key}`;
+  document.getElementById('repairStatus').textContent = `สถานะ: ${row.device_status} · ผู้ยืม: ${row.full_name || '-'}`;
+  document.getElementById('repairNote').value = '';
+  const select = document.getElementById('repairEvent');
+  select.value = row.device_status === 'ส่งซ่อม' ? 'complete' : 'start';
+  Array.from(select.options).forEach((option) => { option.disabled = option.value !== select.value; });
+  document.getElementById('repairHistory').textContent = 'กำลังโหลด...';
+  dialog.showModal();
+  try {
+    const history = await api('repairHistory', { device_key: row.device_key, repair_token: state.admin.repair_token });
+    if (dialog.dataset.device !== row.device_key) return;
+    document.getElementById('repairHistory').innerHTML = history.length ? history.map((item) => `<p class="py-2 border-b"><strong>${escapeHtml(item.event)}</strong> · ${escapeHtml(item.created_at)}<br>${escapeHtml(item.note)}</p>`).join('') : 'ยังไม่มีประวัติการซ่อม';
+  } catch (error) {
+    document.getElementById('repairHistory').textContent = error.message;
+  }
+});
+
+document.getElementById('repairClose').addEventListener('click', () => document.getElementById('repairDialog').close());
+document.getElementById('repairForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = document.getElementById('repairSave');
+  const dialog = document.getElementById('repairDialog');
+  setButtonBusy(button, true, 'กำลังบันทึก...');
+  try {
+    await api('deviceRepair', {
+      device_key: dialog.dataset.device,
+      event: document.getElementById('repairEvent').value,
+      note: document.getElementById('repairNote').value,
+      repair_token: state.admin && state.admin.repair_token,
+    });
+    dialog.close();
+    localStorage.removeItem(DASHBOARD_CACHE_KEY);
+    toast('บันทึกสถานะซ่อมเรียบร้อย');
+    await loadPublicDashboard();
+    if (state.admin) await loadAvailableDeviceOptions();
+  } catch (error) {
+    document.getElementById('repairStatus').textContent = error.message;
+  } finally {
+    setButtonBusy(button, false);
+  }
+});
 
 function statusBadge(status) {
   const text = status || '-';

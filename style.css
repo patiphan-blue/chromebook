@@ -405,6 +405,27 @@ body.mobile-header-hidden .mobile-topbar {
   letter-spacing: -0.025em;
 }
 
+body.dashboard-loading .metric-card strong {
+  color: var(--muted);
+  letter-spacing: 0;
+}
+
+body.dashboard-refreshing .metric-card {
+  position: relative;
+}
+
+body.dashboard-refreshing .metric-card::after {
+  content: "";
+  position: absolute;
+  right: 0.9rem;
+  top: 0.9rem;
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 50%;
+  background: var(--school-red);
+  opacity: 0.55;
+}
+
 .dashboard-panel {
   padding: 1.05rem;
 }

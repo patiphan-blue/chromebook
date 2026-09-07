@@ -21,6 +21,7 @@ const STATUS = {
 };
 
 const HEADERS = {
+  RepairHistory: ['repair_id', 'device_key', 'event', 'note', 'admin_id', 'created_at'],
   Config: ['key', 'value', 'updated_at'],
   Admins: ['admin_id', 'username', 'password', 'full_name', 'role', 'is_active', 'created_at'],
   Students: [
@@ -65,6 +66,8 @@ function handleRequest(e) {
 
     const routes = {
       ping: () => ({ ok: true, message: 'Chromebook API is ready' }),
+      deviceRepair: () => deviceRepair(data),
+      repairHistory: () => repairHistory(data),
       login: () => login(data),
       dashboardSummary: () => getDashboardSummary(),
       dashboard: () => getDashboard(),
@@ -201,8 +204,12 @@ function login(data) {
 
   if (!admin) throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
 
+  const repairToken = Utilities.getUuid();
+  CacheService.getScriptCache().put('repair_auth:' + repairToken, String(admin.admin_id), 21600);
+
   return {
     admin_id: admin.admin_id,
+    repair_token: repairToken,
     username: admin.username,
     full_name: admin.full_name,
     role: admin.role,
@@ -877,7 +884,7 @@ function bulkReturn(data) {
   const returnedSet = new Set(returnedDevices.map(String));
   deviceRows.forEach((row) => {
     if (returnedSet.has(String(row.device_key))) {
-      row.device_status = STATUS.AVAILABLE;
+      if (normalizeDeviceStatus(row.device_status) !== STATUS.REPAIR) row.device_status = STATUS.AVAILABLE;
       row.current_student_id = '';
       row.updated_at = now;
     }
@@ -1834,4 +1841,49 @@ function normalizeExcelDate(value) {
 
 function naturalClassSort(a, b) {
   return String(a).localeCompare(String(b), 'th', { numeric: true, sensitivity: 'base' });
+}
+
+function requireRepairAdmin(data) {
+  const id = CacheService.getScriptCache().get('repair_auth:' + String(data.repair_token || ''));
+  if (!id || !getRows(SHEETS.ADMINS).some((row) => String(row.admin_id) === id && String(row.is_active).toUpperCase() !== 'FALSE')) {
+    throw new Error('กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่เพื่อจัดการซ่อม');
+  }
+  return id;
+}
+
+function repairHistory(data) {
+  requireRepairAdmin(data);
+  const key = required(data.device_key, 'รหัสเครื่อง');
+  return getRows('RepairHistory').filter((row) => String(row.device_key) === key).reverse();
+}
+
+function deviceRepair(data) {
+  const adminId = requireRepairAdmin(data);
+  const key = required(data.device_key, 'รหัสเครื่อง');
+  const note = required(data.note, 'อาการเสียหรือผลการซ่อม');
+  if (note.length > 2000) throw new Error('รายละเอียดต้องไม่เกิน 2000 ตัวอักษร');
+  if (['start', 'complete'].indexOf(data.event) === -1) throw new Error('รายการไม่ถูกต้อง');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = getSheet(SHEETS.CHROMEBOOKS);
+    const values = sheet.getDataRange().getValues();
+    const headers = values[0];
+    const index = values.findIndex((row, i) => i > 0 && String(row[headers.indexOf('device_key')]).trim() === key);
+    if (index < 0) throw new Error('ไม่พบเครื่อง');
+    const repairing = normalizeDeviceStatus(values[index][headers.indexOf('device_status')]) === STATUS.REPAIR;
+    if ((data.event === 'start') === repairing) throw new Error('สถานะเครื่องเปลี่ยนแล้ว กรุณาโหลดข้อมูลใหม่');
+    const active = getRows(SHEETS.TRANSACTIONS).filter((row) => String(row.device_key).trim() === key && isBorrowingStatus(row.status)).pop();
+    const status = data.event === 'start' ? STATUS.REPAIR : active ? STATUS.BORROWED_DEVICE : STATUS.AVAILABLE;
+    updateRowByIndex(SHEETS.CHROMEBOOKS, index + 1, {
+      device_status: status,
+      current_student_id: active ? (getTransactionBorrowerType(active) === 'teacher' ? active.teacher_id || active.borrower_id : active.student_id || active.borrower_id) : '',
+      updated_at: nowText(),
+    });
+    appendObjects('RepairHistory', [{ repair_id: Utilities.getUuid(), device_key: key, event: data.event === 'start' ? 'ส่งซ่อม' : 'ซ่อมเสร็จ', note, admin_id: adminId, created_at: nowText() }]);
+    SpreadsheetApp.flush();
+    return { device_status: status };
+  } finally {
+    lock.releaseLock();
+  }
 }
