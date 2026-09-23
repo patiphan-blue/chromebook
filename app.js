@@ -544,7 +544,7 @@ function renderActiveDashboardTable() {
         <td data-label="วันยืม">${escapeHtml(row.borrow_date || '-')}</td>
         <td data-label="วันคืน">${escapeHtml(row.return_date || '-')}</td>
         <td data-label="สถานะ">${statusBadge(row.status)}</td>
-        <td data-label="เลขเครื่อง">${escapeHtml(row.device_key || '-')}</td>
+        <td data-label="เลขเครื่อง">${escapeHtml(row.device_key || '-')}${type === 'returned' && state.admin ? `<button type="button" class="btn-secondary edit-return-accessories" data-transaction="${escapeAttr(row.transaction_id)}">แก้ผลตรวจอุปกรณ์</button>` : ''}</td>
       </tr>
     `);
   });
@@ -1934,6 +1934,47 @@ function accessorySummary(value) {
     return `<div class="text-sm" style="white-space:normal;overflow-wrap:anywhere">${[['pen', 'ปากกา'], ['pen_charger', 'ที่ชาร์จปากกา'], ['charger', 'สายชาร์จ / ที่ชาร์จเครื่อง']].map(([key, label]) => `<p>${label}: <strong>${escapeHtml(check[key] || 'ยังไม่ได้ตรวจ')}</strong></p>`).join('')}<p>ตรวจคืน ${escapeHtml(check.inspection_date || '-')}</p>${check.note ? `<p>${escapeHtml(check.note)}</p>` : ''}</div>`;
   } catch (_) { return '<p>ไม่สามารถอ่านผลตรวจอุปกรณ์ได้</p>'; }
 }
+
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('.edit-return-accessories');
+  if (!button || !state.admin) return;
+  const row = state.dashboardTables.returned.find((item) => String(item.transaction_id) === button.dataset.transaction);
+  if (!row) return;
+  const dialog = document.getElementById('editAccessoryDialog');
+  const form = document.getElementById('editAccessoryForm');
+  form.reset();
+  dialog.dataset.transaction = row.transaction_id;
+  document.getElementById('editAccessoryContext').textContent = `${row.full_name} (${row.borrower_id}) · ${row.device_key} · คืน ${row.return_date || '-'}`;
+  const status = document.getElementById('editAccessoryStatus');
+  const save = document.getElementById('editAccessorySave');
+  save.disabled = true;
+  status.textContent = 'กำลังโหลดผลตรวจเดิม...';
+  dialog.showModal();
+  try {
+    const history = await api('accessoryHistory', {device_key: row.device_key, repair_token: state.admin.repair_token});
+    if (dialog.dataset.transaction !== String(row.transaction_id) || !dialog.open) return;
+    const latest = history.find((item) => String(item.transaction_id) === String(row.transaction_id));
+    ['pen', 'pen_charger', 'charger', 'note'].forEach((key) => { form.elements.namedItem(key).value = latest ? latest[key] || (key === 'note' ? '' : 'ยังไม่ได้ตรวจ') : key === 'note' ? '' : 'ยังไม่ได้ตรวจ'; });
+    status.textContent = latest ? 'โหลดผลตรวจล่าสุดแล้ว' : 'รายการนี้ยังไม่มีผลตรวจอุปกรณ์';
+    save.disabled = false;
+  } catch (error) { status.textContent = error.message; }
+});
+
+document.getElementById('editAccessoryClose').addEventListener('click', () => document.getElementById('editAccessoryDialog').close());
+document.getElementById('editAccessoryForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const dialog = document.getElementById('editAccessoryDialog');
+  const save = document.getElementById('editAccessorySave');
+  setButtonBusy(save, true, 'กำลังบันทึก...');
+  try {
+    const result = await api('updateReturnedAccessories', { ...Object.fromEntries(new FormData(event.target)), transaction_id: dialog.dataset.transaction, repair_token: state.admin && state.admin.repair_token });
+    dialog.close();
+    toast(result.message);
+    localStorage.removeItem(DASHBOARD_CACHE_KEY);
+    await loadPublicDashboard();
+  } catch (error) { document.getElementById('editAccessoryStatus').textContent = error.message; }
+  finally { setButtonBusy(save, false); }
+});
 
 document.addEventListener('click', async (event) => {
   const button = event.target.closest('.accessory-history');

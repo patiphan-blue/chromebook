@@ -21,7 +21,7 @@ const STATUS = {
 };
 
 const HEADERS = {
-  AccessoryHistory: ['inspection_id', 'device_key', 'transaction_id', 'borrower_id', 'inspection_date', 'pen', 'pen_charger', 'charger', 'note', 'created_at'],
+  AccessoryHistory: ['inspection_id', 'device_key', 'transaction_id', 'borrower_id', 'inspection_date', 'pen', 'pen_charger', 'charger', 'note', 'created_at', 'admin_id'],
   RepairHistory: ['repair_id', 'device_key', 'event', 'note', 'admin_id', 'created_at'],
   Config: ['key', 'value', 'updated_at'],
   Admins: ['admin_id', 'username', 'password', 'full_name', 'role', 'is_active', 'created_at'],
@@ -69,6 +69,7 @@ function handleRequest(e) {
       ping: () => ({ ok: true, message: 'Chromebook API is ready' }),
       deviceRepair: () => deviceRepair(data),
       repairHistory: () => repairHistory(data),
+      updateReturnedAccessories: () => updateReturnedAccessories(data),
       accessoryHistory: () => { requireRepairAdmin(data); return getRows('AccessoryHistory').filter((row) => String(row.device_key) === String(data.device_key)).reverse(); },
       login: () => login(data),
       dashboardSummary: () => getDashboardSummary(),
@@ -1882,6 +1883,42 @@ function requireRepairAdmin(data) {
     throw new Error('กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่เพื่อจัดการซ่อม');
   }
   return id;
+}
+
+function updateReturnedAccessories(data) {
+  const adminId = requireRepairAdmin(data);
+  const transactionId = required(data.transaction_id, 'รายการคืน');
+  const check = {};
+  ['pen', 'pen_charger', 'charger'].forEach((key) => {
+    if (['ครบ', 'ขาด', 'ชำรุด', 'ยังไม่ได้ตรวจ'].indexOf(data[key]) < 0) throw new Error('กรุณาระบุสถานะอุปกรณ์');
+    check[key] = data[key];
+  });
+  check.note = String(data.note || '').trim();
+  if (check.note.length > 2000) throw new Error('หมายเหตุยาวเกิน 2000 ตัวอักษร');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const transactions = getRows(SHEETS.TRANSACTIONS);
+    const tx = transactions.find((row) => String(row.transaction_id) === transactionId);
+    if (!tx || String(tx.status).trim() !== STATUS.RETURNED) throw new Error('ไม่พบรายการที่คืนแล้ว');
+    Object.assign(check, { inspection_id: Utilities.getUuid(), transaction_id: transactionId,
+      device_key: String(tx.device_key), borrower_id: getTransactionBorrowerKey(tx).split(':').slice(1).join(':'),
+      inspection_date: tx.return_date || '', created_at: nowText(), admin_id: adminId });
+    const deviceTransactions = transactions.filter((row) => String(row.device_key) === check.device_key);
+    // Only the latest loan cycle may change the current equipment snapshot.
+    const updateSnapshot = deviceTransactions[deviceTransactions.length - 1] === tx && !deviceTransactions.some((row) => isBorrowingStatus(row.status));
+    if (updateSnapshot) {
+      const devices = getRows(SHEETS.CHROMEBOOKS);
+      const device = devices.find((row) => String(row.device_key) === check.device_key);
+      if (device) {
+        device.accessory_check = JSON.stringify(check);
+        rewriteObjects(SHEETS.CHROMEBOOKS, devices);
+      }
+    }
+    appendObjects('AccessoryHistory', [check]);
+    SpreadsheetApp.flush();
+    return { message: updateSnapshot ? 'บันทึกผลตรวจและข้อมูลอุปกรณ์ล่าสุดแล้ว' : 'บันทึกผลตรวจของผู้ยืมเดิมแล้ว ข้อมูลเครื่องปัจจุบันไม่เปลี่ยน' };
+  } finally { lock.releaseLock(); }
 }
 
 function repairHistory(data) {

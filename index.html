@@ -617,6 +617,18 @@
     <div id="accessoryHistoryContent" aria-live="polite"></div>
     <form method="dialog"><button class="btn-secondary mt-4">ปิด</button></form>
   </dialog>
-  <script src="app.js?v=20260923-accessories"></script>
+  <dialog id="editAccessoryDialog" aria-labelledby="editAccessoryTitle" style="width:min(560px,94vw);max-height:90dvh;overflow:auto;border:1px solid #ddd;border-radius:8px;padding:24px">
+    <form id="editAccessoryForm" class="space-y-4">
+      <h2 id="editAccessoryTitle" class="text-xl font-bold">แก้ผลตรวจอุปกรณ์คืน</h2>
+      <p id="editAccessoryContext" style="overflow-wrap:anywhere"></p>
+      <label class="block">ปากกา<select name="pen" class="input"><option>ยังไม่ได้ตรวจ</option><option>ครบ</option><option>ขาด</option><option>ชำรุด</option></select></label>
+      <label class="block">ที่ชาร์จปากกา<select name="pen_charger" class="input"><option>ยังไม่ได้ตรวจ</option><option>ครบ</option><option>ขาด</option><option>ชำรุด</option></select></label>
+      <label class="block">สายชาร์จ / ที่ชาร์จเครื่อง<select name="charger" class="input"><option>ยังไม่ได้ตรวจ</option><option>ครบ</option><option>ขาด</option><option>ชำรุด</option></select></label>
+      <label class="block">หมายเหตุ<textarea name="note" class="input" rows="3" maxlength="2000"></textarea></label>
+      <p id="editAccessoryStatus" role="status"></p>
+      <div class="flex gap-3"><button id="editAccessorySave" type="submit" class="btn-primary">บันทึก</button><button id="editAccessoryClose" type="button" class="btn-secondary">ปิด</button></div>
+    </form>
+  </dialog>
+  <script src="app.js?v=20260923-accessory-edit"></script>
 </body>
 </html>
