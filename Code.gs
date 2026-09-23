@@ -21,6 +21,7 @@ const STATUS = {
 };
 
 const HEADERS = {
+  AccessoryHistory: ['inspection_id', 'device_key', 'transaction_id', 'borrower_id', 'inspection_date', 'pen', 'pen_charger', 'charger', 'note', 'created_at'],
   RepairHistory: ['repair_id', 'device_key', 'event', 'note', 'admin_id', 'created_at'],
   Config: ['key', 'value', 'updated_at'],
   Admins: ['admin_id', 'username', 'password', 'full_name', 'role', 'is_active', 'created_at'],
@@ -45,7 +46,7 @@ const HEADERS = {
     'updated_at',
   ],
   Teachers: ['teacher_id', 'prefix', 'full_name', 'phone', 'created_at', 'updated_at'],
-  Chromebooks: ['device_key', 'asset_no', 'device_status', 'current_student_id', 'updated_at'],
+  Chromebooks: ['device_key', 'asset_no', 'device_status', 'current_student_id', 'updated_at', 'accessory_check'],
   Transactions: ['transaction_id', 'borrower_type', 'borrower_id', 'student_id', 'teacher_id', 'borrower_name', 'device_key', 'borrow_date', 'return_date', 'status', 'note', 'created_at', 'updated_at'],
   BorrowRequests: ['request_id', 'citizen_id', 'student_id', 'full_name', 'parent_name', 'grade_level', 'phone', 'house_no', 'village_no', 'subdistrict', 'district', 'province', 'address', 'request_status', 'note', 'created_at', 'updated_at'],
 };
@@ -68,6 +69,7 @@ function handleRequest(e) {
       ping: () => ({ ok: true, message: 'Chromebook API is ready' }),
       deviceRepair: () => deviceRepair(data),
       repairHistory: () => repairHistory(data),
+      accessoryHistory: () => { requireRepairAdmin(data); return getRows('AccessoryHistory').filter((row) => String(row.device_key) === String(data.device_key)).reverse(); },
       login: () => login(data),
       dashboardSummary: () => getDashboardSummary(),
       dashboard: () => getDashboard(),
@@ -302,6 +304,7 @@ function buildDeviceTrackingRows(chromebooks, transactions, students, teachers) 
     return {
       device_key: deviceKey,
       asset_no: device.asset_no || '',
+      accessory_check: device.accessory_check || '',
       device_status: status,
       borrower_type: borrowerType || (teachersById[borrowerId] ? 'teacher' : borrowerId ? 'student' : ''),
       borrower_id: status === STATUS.AVAILABLE ? '' : borrowerId,
@@ -835,6 +838,13 @@ function getTeacherBorrowers() {
 }
 
 function bulkReturn(data) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try { return bulkReturnLocked(data); }
+  finally { lock.releaseLock(); }
+}
+
+function bulkReturnLocked(data) {
   const transactionIds = data.transaction_ids || [];
   const returnDate = data.return_date || todayText();
   if (!Array.isArray(transactionIds) || transactionIds.length === 0) {
@@ -853,6 +863,24 @@ function bulkReturn(data) {
   const borrowerKeysToClose = new Set();
   const returnedDevices = [];
   const now = nowText();
+
+  const inspections = data.inspections || {};
+  const checks = [];
+  txValues.slice(1).forEach((values) => {
+    const tx = rowToObject(txHeaders, values);
+    if (!idSet.has(String(tx.transaction_id)) || !isBorrowingStatus(tx.status)) return;
+    const input = inspections[tx.transaction_id] || {};
+    const check = { inspection_id: Utilities.getUuid(), device_key: String(tx.device_key), transaction_id: tx.transaction_id,
+      borrower_id: tx.borrower_id || tx.student_id || tx.teacher_id || '', inspection_date: returnDate, created_at: now };
+    ['pen', 'pen_charger', 'charger'].forEach((key) => {
+      const value = input[key] || 'ยังไม่ได้ตรวจ';
+      if (['ครบ', 'ขาด', 'ชำรุด', 'ยังไม่ได้ตรวจ'].indexOf(value) < 0) throw new Error('สถานะอุปกรณ์ไม่ถูกต้อง');
+      check[key] = value;
+    });
+    check.note = String(input.note || '').trim();
+    if (check.note.length > 2000) throw new Error('หมายเหตุยาวเกิน 2000 ตัวอักษร');
+    checks.push(check);
+  });
 
   for (let i = 1; i < txValues.length; i++) {
     const row = txValues[i];
@@ -884,12 +912,17 @@ function bulkReturn(data) {
   const returnedSet = new Set(returnedDevices.map(String));
   deviceRows.forEach((row) => {
     if (returnedSet.has(String(row.device_key))) {
+      const check = checks.filter((item) => item.device_key === String(row.device_key)).pop();
+      if (check) row.accessory_check = JSON.stringify(check);
       if (normalizeDeviceStatus(row.device_status) !== STATUS.REPAIR) row.device_status = STATUS.AVAILABLE;
       row.current_student_id = '';
       row.updated_at = now;
     }
   });
   rewriteObjects(SHEETS.CHROMEBOOKS, deviceRows);
+
+  appendObjects('AccessoryHistory', checks);
+  SpreadsheetApp.flush();
 
   return { message: 'คืนเครื่องสำเร็จ', returned_count: returnedDevices.length };
 }

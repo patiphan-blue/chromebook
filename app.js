@@ -514,7 +514,7 @@ function renderActiveDashboardTable() {
       tbody.insertAdjacentHTML('beforeend', `
         <tr class="${dashboardRowClass(type, row)} dashboard-card-row">
           <td data-label="เลขที่ทรัพย์สิน"><strong>${escapeHtml(row.asset_no || '-')}</strong>${state.admin ? `<button type="button" class="btn-secondary repair-open" data-device="${escapeHtml(row.device_key)}">จัดการซ่อม</button>` : ''}</td>
-          <td data-label="รหัสเครื่อง">${escapeHtml(row.device_key || '-')}</td>
+          <td data-label="รหัสเครื่อง">${escapeHtml(row.device_key || '-')}${accessorySummary(row.accessory_check)}${state.admin ? `<button type="button" class="btn-secondary accessory-history" data-device="${escapeAttr(row.device_key)}">ประวัติอุปกรณ์</button>` : ''}</td>
           <td data-label="สถานะ">${statusBadge(row.device_status)}</td>
           <td data-label="รหัสผู้ถือ">${escapeHtml(row.borrower_id || '-')}</td>
           <td data-label="ผู้ถือปัจจุบัน">${escapeHtml(row.full_name || '-')}</td>
@@ -901,7 +901,7 @@ async function loadBorrowers() {
           <td>${escapeHtml(row.grade_level || '-')}</td>
           <td>${escapeHtml(row.student_id || '-')}</td>
           <td>${escapeHtml(row.full_name || '-')}</td>
-          <td>${escapeHtml(row.device_key || '-')}</td>
+          <td>${escapeHtml(row.device_key || '-')}<details><summary>ตรวจอุปกรณ์คืน</summary>${[['pen', 'ปากกา'], ['pen_charger', 'ที่ชาร์จปากกา'], ['charger', 'สายชาร์จ / ที่ชาร์จเครื่อง']].map(([key, label]) => `<label style="display:block;margin-top:8px">${label}<select class="input" data-accessory="${key}" aria-label="${label}">${['ยังไม่ได้ตรวจ', 'ครบ', 'ขาด', 'ชำรุด'].map((value) => `<option>${value}</option>`).join('')}</select></label>`).join('')}<label style="display:block;margin-top:8px">หมายเหตุ<textarea class="input" data-accessory="note" maxlength="2000" rows="2"></textarea></label></details></td>
           <td>${escapeHtml(row.borrow_date || '-')}</td>
         </tr>
       `);
@@ -979,6 +979,7 @@ async function onBulkReturn() {
   try {
     const res = await api('bulkReturn', {
       transaction_ids: transactionIds,
+      inspections: Object.fromEntries(Array.from(document.querySelectorAll('.return-check:checked')).map((checkbox) => [checkbox.value, Object.fromEntries(Array.from(checkbox.closest('tr').querySelectorAll('[data-accessory]')).map((input) => [input.dataset.accessory, input.value]))])),
       return_date: document.getElementById('returnDate').value,
     });
     toast(res.message || 'คืนเครื่องสำเร็จ');
@@ -1925,6 +1926,28 @@ async function api(action, data = {}) {
   if (!result.success) throw new Error(result.message || 'เกิดข้อผิดพลาด');
   return result.data;
 }
+
+function accessorySummary(value) {
+  if (!value) return '<p class="text-sm">อุปกรณ์: ยังไม่มีผลตรวจ</p>';
+  try {
+    const check = typeof value === 'string' ? JSON.parse(value) : value;
+    return `<div class="text-sm" style="white-space:normal;overflow-wrap:anywhere">${[['pen', 'ปากกา'], ['pen_charger', 'ที่ชาร์จปากกา'], ['charger', 'สายชาร์จ / ที่ชาร์จเครื่อง']].map(([key, label]) => `<p>${label}: <strong>${escapeHtml(check[key] || 'ยังไม่ได้ตรวจ')}</strong></p>`).join('')}<p>ตรวจคืน ${escapeHtml(check.inspection_date || '-')}</p>${check.note ? `<p>${escapeHtml(check.note)}</p>` : ''}</div>`;
+  } catch (_) { return '<p>ไม่สามารถอ่านผลตรวจอุปกรณ์ได้</p>'; }
+}
+
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('.accessory-history');
+  if (!button || !state.admin) return;
+  const dialog = document.getElementById('accessoryDialog');
+  const content = document.getElementById('accessoryHistoryContent');
+  document.getElementById('accessoryDeviceKey').textContent = button.dataset.device;
+  content.textContent = 'กำลังโหลด...';
+  dialog.showModal();
+  try {
+    const rows = await api('accessoryHistory', { device_key: button.dataset.device, repair_token: state.admin.repair_token });
+    content.innerHTML = rows.length ? rows.map((row) => `<section class="py-3 border-b"><p>รหัสผู้ยืม: ${escapeHtml(row.borrower_id || '-')}</p>${accessorySummary(row)}</section>`).join('') : 'ยังไม่มีประวัติตรวจอุปกรณ์';
+  } catch (error) { content.textContent = error.message; }
+});
 
 document.addEventListener('click', async (event) => {
   const button = event.target.closest('.repair-open');

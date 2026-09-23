@@ -611,6 +611,12 @@
       <div id="repairHistory" style="overflow-wrap:anywhere" aria-live="polite"></div>
     </form>
   </dialog>
-  <script src="app.js?v=20260907-repairs"></script>
+  <dialog id="accessoryDialog" aria-labelledby="accessoryTitle" style="width:min(560px,94vw);max-height:90dvh;overflow:auto;border:1px solid #ddd;border-radius:8px;padding:24px">
+    <h2 id="accessoryTitle" class="text-xl font-bold">ประวัติตรวจอุปกรณ์คืน</h2>
+    <p id="accessoryDeviceKey" style="overflow-wrap:anywhere"></p>
+    <div id="accessoryHistoryContent" aria-live="polite"></div>
+    <form method="dialog"><button class="btn-secondary mt-4">ปิด</button></form>
+  </dialog>
+  <script src="app.js?v=20260923-accessories"></script>
 </body>
 </html>
