@@ -276,6 +276,7 @@ function showAdminPage(page) {
     button.classList.toggle('active', button.dataset.page === page);
   });
   if (page === 'return') loadClasses();
+  if (page === 'accessoryDebts') loadAccessoryDebts();
   if (page === 'assign') {
     loadClasses();
     loadAvailableDeviceOptions();
@@ -1931,9 +1932,79 @@ function accessorySummary(value) {
   if (!value) return '<p class="text-sm">อุปกรณ์: ยังไม่มีผลตรวจ</p>';
   try {
     const check = typeof value === 'string' ? JSON.parse(value) : value;
-    return `<div class="text-sm" style="white-space:normal;overflow-wrap:anywhere">${[['pen', 'ปากกา'], ['pen_charger', 'ที่ชาร์จปากกา'], ['charger', 'สายชาร์จ / ที่ชาร์จเครื่อง']].map(([key, label]) => `<p>${label}: <strong>${escapeHtml(check[key] || 'ยังไม่ได้ตรวจ')}</strong></p>`).join('')}<p>ตรวจคืน ${escapeHtml(check.inspection_date || '-')}</p>${check.note ? `<p>${escapeHtml(check.note)}</p>` : ''}</div>`;
+    return `<div class="text-sm" style="white-space:normal;overflow-wrap:anywhere">${[['pen', 'ปากกา'], ['pen_charger', 'ที่ชาร์จปากกา'], ['charger', 'สายชาร์จ / ที่ชาร์จเครื่อง']].map(([key, label]) => `<p>${label}: <strong>${escapeHtml(check[key] || 'ยังไม่ได้ตรวจ')}</strong></p>`).join('')}<p>ตรวจคืน ${escapeHtml(check.inspection_date || '-')}</p>${check.note ? `<p>${escapeHtml(check.note)}</p>` : ''}${check.received_at ? `<p>รับคืนเพิ่มเติม ${escapeHtml(check.received_at)}: ${escapeHtml(String(check.received_items || '').split(',').map((key) => ACCESSORY_LABELS[key] || key).join(', '))}</p><p>${escapeHtml(check.receipt_note || '')}</p>` : ''}</div>`;
   } catch (_) { return '<p>ไม่สามารถอ่านผลตรวจอุปกรณ์ได้</p>'; }
 }
+
+const ACCESSORY_LABELS = { pen: 'ปากกา', pen_charger: 'ที่ชาร์จปากกา', charger: 'สายชาร์จ / ที่ชาร์จเครื่อง' };
+let accessoryDebtRows = [];
+let accessoryDebtLoadId = 0;
+
+async function loadAccessoryDebts() {
+  const loadId = ++accessoryDebtLoadId;
+  const meta = document.getElementById('accessoryDebtMeta');
+  accessoryDebtRows = [];
+  document.getElementById('accessoryDebtRows').innerHTML = '';
+  meta.textContent = 'กำลังโหลดรายการอุปกรณ์...';
+  try {
+    const rows = await api('listAccessoryDebts', { repair_token: state.admin && state.admin.repair_token });
+    if (loadId !== accessoryDebtLoadId || !state.admin) return;
+    accessoryDebtRows = rows;
+    renderAccessoryDebts();
+  } catch (error) { if (loadId === accessoryDebtLoadId) meta.textContent = error.message; }
+}
+
+function renderAccessoryDebts() {
+  const query = document.getElementById('accessoryDebtQuery').value.trim().toLowerCase();
+  const filter = document.getElementById('accessoryDebtFilter').value;
+  const rows = accessoryDebtRows.filter((row) => (filter === 'all' || (filter === 'pending' ? row.pending_items.length > 0 : !row.pending_items.length)) && [row.full_name, row.borrower_id, row.grade_level, row.asset_no, row.device_key].join(' ').toLowerCase().includes(query));
+  document.getElementById('accessoryDebtMeta').textContent = `แสดง ${rows.length} รายการ · ค้างคืนทั้งหมด ${accessoryDebtRows.filter((row) => row.pending_items.length).length} รายการ`;
+  document.getElementById('accessoryDebtRows').innerHTML = rows.length ? rows.map((row) => `<tr>
+    <td style="overflow-wrap:anywhere">${escapeHtml(row.asset_no || '-')}<br>${escapeHtml(row.device_key)}</td>
+    <td>${escapeHtml(row.full_name || '-')}<br>${escapeHtml(row.borrower_id || '-')}</td>
+    <td>${escapeHtml(row.grade_level || '-')}</td>
+    <td>${Object.entries(ACCESSORY_LABELS).map(([key, label]) => `<p>${label}: <strong>${escapeHtml(row[key] || 'ยังไม่ได้ตรวจ')}</strong></p>`).join('')}</td>
+    <td>${row.pending_items.length ? 'ยังค้างคืน' : row.received_at ? 'คืนอุปกรณ์ครบแล้ว' : 'ไม่มียอดค้างตามผลตรวจ'}${row.received_at ? `<br>รับคืนล่าสุด ${escapeHtml(row.received_at)}` : ''}</td>
+    <td>${row.pending_items.length && row.can_receive ? `<button type="button" class="btn-primary receive-accessories" data-inspection="${escapeAttr(row.inspection_id)}">รับคืนอุปกรณ์</button>` : ''}<button type="button" class="btn-secondary accessory-history" data-device="${escapeAttr(row.device_key)}">ประวัติอุปกรณ์</button></td>
+  </tr>`).join('') : '<tr><td colspan="6">ไม่พบรายการตามเงื่อนไข</td></tr>';
+}
+
+document.getElementById('reloadAccessoryDebts').addEventListener('click', loadAccessoryDebts);
+document.getElementById('accessoryDebtQuery').addEventListener('input', renderAccessoryDebts);
+document.getElementById('accessoryDebtFilter').addEventListener('change', renderAccessoryDebts);
+document.getElementById('receiveAccessoryClose').addEventListener('click', () => document.getElementById('receiveAccessoryDialog').close());
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('.receive-accessories');
+  if (!button || !state.admin) return;
+  const row = accessoryDebtRows.find((item) => String(item.inspection_id) === button.dataset.inspection);
+  if (!row) return;
+  const dialog = document.getElementById('receiveAccessoryDialog');
+  dialog.dataset.inspection = row.inspection_id;
+  document.getElementById('receiveAccessoryForm').reset();
+  document.getElementById('receiveAccessoryContext').textContent = `${row.full_name} (${row.borrower_id}) · ${row.asset_no || row.device_key}`;
+  document.getElementById('receiveAccessoryItems').innerHTML = row.pending_items.map((key) => `<label style="display:flex;align-items:center;gap:12px;min-height:44px"><input type="checkbox" name="items" value="${key}">${ACCESSORY_LABELS[key]} (${escapeHtml(row[key])})</label>`).join('');
+  document.getElementById('receiveAccessoryStatus').textContent = '';
+  dialog.showModal();
+});
+document.getElementById('receiveAccessoryForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const dialog = document.getElementById('receiveAccessoryDialog');
+  const row = accessoryDebtRows.find((item) => String(item.inspection_id) === dialog.dataset.inspection);
+  const form = new FormData(event.target);
+  const status = document.getElementById('receiveAccessoryStatus');
+  if (!row || !form.getAll('items').length) { status.textContent = 'กรุณาเลือกอุปกรณ์ที่ได้รับคืนแล้ว'; return; }
+  const save = document.getElementById('receiveAccessorySave');
+  setButtonBusy(save, true, 'กำลังบันทึก...');
+  try {
+    const result = await api('receiveAccessories', { transaction_id: row.transaction_id, inspection_id: row.inspection_id, items: form.getAll('items'), note: form.get('note'), repair_token: state.admin && state.admin.repair_token });
+    dialog.close();
+    toast(result.message);
+    localStorage.removeItem(DASHBOARD_CACHE_KEY);
+    await loadAccessoryDebts();
+    await loadPublicDashboard();
+  } catch (error) { status.textContent = error.message; }
+  finally { setButtonBusy(save, false); }
+});
 
 document.addEventListener('click', async (event) => {
   const button = event.target.closest('.edit-return-accessories');

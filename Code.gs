@@ -21,7 +21,7 @@ const STATUS = {
 };
 
 const HEADERS = {
-  AccessoryHistory: ['inspection_id', 'device_key', 'transaction_id', 'borrower_id', 'inspection_date', 'pen', 'pen_charger', 'charger', 'note', 'created_at', 'admin_id'],
+  AccessoryHistory: ['inspection_id', 'device_key', 'transaction_id', 'borrower_id', 'inspection_date', 'pen', 'pen_charger', 'charger', 'note', 'created_at', 'admin_id', 'received_items', 'received_at', 'receipt_note'],
   RepairHistory: ['repair_id', 'device_key', 'event', 'note', 'admin_id', 'created_at'],
   Config: ['key', 'value', 'updated_at'],
   Admins: ['admin_id', 'username', 'password', 'full_name', 'role', 'is_active', 'created_at'],
@@ -70,6 +70,8 @@ function handleRequest(e) {
       deviceRepair: () => deviceRepair(data),
       repairHistory: () => repairHistory(data),
       updateReturnedAccessories: () => updateReturnedAccessories(data),
+      listAccessoryDebts: () => listAccessoryDebts(data),
+      receiveAccessories: () => receiveAccessories(data),
       accessoryHistory: () => { requireRepairAdmin(data); return getRows('AccessoryHistory').filter((row) => String(row.device_key) === String(data.device_key)).reverse(); },
       login: () => login(data),
       dashboardSummary: () => getDashboardSummary(),
@@ -1925,6 +1927,66 @@ function repairHistory(data) {
   requireRepairAdmin(data);
   const key = required(data.device_key, 'รหัสเครื่อง');
   return getRows('RepairHistory').filter((row) => String(row.device_key) === key).reverse();
+}
+
+function listAccessoryDebts(data) {
+  requireRepairAdmin(data);
+  const latest = new Map();
+  const affected = new Set();
+  const keys = ['pen', 'pen_charger', 'charger'];
+  getRows('AccessoryHistory').forEach((row) => {
+    const id = String(row.transaction_id || '');
+    if (!id) return;
+    latest.set(id, row);
+    if (keys.some((key) => row[key] === 'ขาด' || row[key] === 'ชำรุด')) affected.add(id);
+  });
+  const transactions = indexBy(getRows(SHEETS.TRANSACTIONS), 'transaction_id');
+  const students = indexBy(getRows(SHEETS.STUDENTS), 'student_id');
+  const teachers = indexBy(getRows(SHEETS.TEACHERS), 'teacher_id');
+  const devices = indexBy(getRows(SHEETS.CHROMEBOOKS), 'device_key');
+  return Array.from(affected).map((id) => {
+    const check = latest.get(id);
+    const tx = transactions[id] || {};
+    const borrower = formatDashboardTransaction(tx, students, teachers);
+    return Object.assign({}, check, {
+      full_name: borrower.full_name || '', grade_level: borrower.grade_level || '',
+      asset_no: (devices[check.device_key] || {}).asset_no || '',
+      pending_items: keys.filter((key) => check[key] === 'ขาด' || check[key] === 'ชำรุด'),
+      can_receive: String(tx.status).trim() === STATUS.RETURNED,
+    });
+  }).reverse();
+}
+
+function receiveAccessories(data) {
+  const adminId = requireRepairAdmin(data);
+  const id = required(data.transaction_id, 'รายการคืน');
+  const items = data.items;
+  if (!Array.isArray(items) || !items.length || new Set(items).size !== items.length || items.some((key) => ['pen', 'pen_charger', 'charger'].indexOf(key) < 0)) throw new Error('กรุณาเลือกอุปกรณ์ที่รับคืน');
+  const note = String(data.note || '').trim();
+  if (note.length > 2000) throw new Error('หมายเหตุยาวเกิน 2000 ตัวอักษร');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const transactions = getRows(SHEETS.TRANSACTIONS);
+    const tx = transactions.find((row) => String(row.transaction_id) === id);
+    if (!tx || String(tx.status).trim() !== STATUS.RETURNED) throw new Error('ไม่พบรายการที่คืนแล้ว');
+    const previous = getRows('AccessoryHistory').filter((row) => String(row.transaction_id) === id).pop();
+    if (!previous || String(previous.inspection_id) !== String(data.inspection_id)) throw new Error('ข้อมูลเปลี่ยนแล้ว กรุณาโหลดรายการใหม่ก่อนรับคืน');
+    if (items.some((key) => previous[key] !== 'ขาด' && previous[key] !== 'ชำรุด')) throw new Error('อุปกรณ์นี้ไม่มียอดค้างคืนแล้ว');
+    const now = nowText();
+    const check = Object.assign({}, previous, { inspection_id: Utilities.getUuid(), created_at: now, admin_id: adminId,
+      received_items: items.join(','), received_at: now, receipt_note: note });
+    items.forEach((key) => { check[key] = 'ครบ'; });
+    const deviceTransactions = transactions.filter((row) => String(row.device_key) === String(tx.device_key));
+    if (deviceTransactions[deviceTransactions.length - 1] === tx && !deviceTransactions.some((row) => isBorrowingStatus(row.status))) {
+      const devices = getRows(SHEETS.CHROMEBOOKS);
+      const device = devices.find((row) => String(row.device_key) === String(tx.device_key));
+      if (device) { device.accessory_check = JSON.stringify(check); rewriteObjects(SHEETS.CHROMEBOOKS, devices); }
+    }
+    appendObjects('AccessoryHistory', [check]);
+    SpreadsheetApp.flush();
+    return { message: 'บันทึกรับคืนอุปกรณ์แล้ว' };
+  } finally { lock.releaseLock(); }
 }
 
 function deviceRepair(data) {

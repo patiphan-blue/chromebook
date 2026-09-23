@@ -238,6 +238,7 @@
             <div class="flex flex-wrap gap-2">
               <button class="tab-btn active" data-page="assign">ยืมเครื่อง</button>
               <button class="tab-btn" data-page="return">คืนหลายคน</button>
+              <button class="tab-btn" data-page="accessoryDebts">อุปกรณ์ค้างคืน</button>
               <button class="tab-btn" data-page="requests">คำขอยืม</button>
               <button class="tab-btn" data-page="deviceReport">ทะเบียนเครื่อง/Excel</button>
               <button class="tab-btn" data-page="import">นำเข้า Excel</button>
@@ -364,6 +365,17 @@
               <input id="returnDate" type="date" class="input sm:max-w-56">
               <button id="bulkReturnBtn" class="btn-primary">คืนเครื่องที่เลือก</button>
             </div>
+          </section>
+
+          <section id="accessoryDebtsPage" class="admin-page hidden space-y-4">
+            <h3 class="text-lg font-bold">ติดตามอุปกรณ์ค้างคืน</h3>
+            <div class="flex flex-wrap gap-3 items-end">
+              <label>ค้นหาผู้ยืม / เลขทรัพย์สิน / รหัสเครื่อง<input id="accessoryDebtQuery" class="input" type="search"></label>
+              <label>สถานะ<select id="accessoryDebtFilter" class="input"><option value="pending">ยังค้างคืน</option><option value="closed">ปิดรายการแล้ว</option><option value="all">ทั้งหมด</option></select></label>
+              <button id="reloadAccessoryDebts" class="btn-secondary" type="button">โหลดข้อมูลใหม่</button>
+            </div>
+            <p id="accessoryDebtMeta" role="status"></p>
+            <div style="overflow:auto" tabindex="0" role="region" aria-label="รายการอุปกรณ์ค้างคืน"><table class="w-full" style="min-width:1000px"><thead><tr><th>เลขทรัพย์สิน / รหัสเครื่อง</th><th>ผู้ยืมเดิม</th><th>ชั้น / ห้อง</th><th>อุปกรณ์</th><th>สถานะ</th><th>จัดการ</th></tr></thead><tbody id="accessoryDebtRows"></tbody></table></div>
           </section>
 
           <section id="requestsPage" class="admin-page hidden space-y-5">
@@ -629,6 +641,16 @@
       <div class="flex gap-3"><button id="editAccessorySave" type="submit" class="btn-primary">บันทึก</button><button id="editAccessoryClose" type="button" class="btn-secondary">ปิด</button></div>
     </form>
   </dialog>
-  <script src="app.js?v=20260923-accessory-edit"></script>
+  <dialog id="receiveAccessoryDialog" aria-labelledby="receiveAccessoryTitle" style="width:min(560px,94vw);max-height:90dvh;overflow:auto;border:1px solid #ddd;border-radius:8px;padding:24px">
+    <form id="receiveAccessoryForm" class="space-y-4">
+      <h2 id="receiveAccessoryTitle" class="text-xl font-bold">รับคืนอุปกรณ์เพิ่มเติม</h2>
+      <p id="receiveAccessoryContext" style="overflow-wrap:anywhere"></p>
+      <fieldset><legend>อุปกรณ์ที่ได้รับคืนแล้ว</legend><div id="receiveAccessoryItems"></div></fieldset>
+      <label class="block">หมายเหตุ<textarea name="note" class="input" rows="2" maxlength="2000"></textarea></label>
+      <p id="receiveAccessoryStatus" role="status"></p>
+      <div class="flex gap-3"><button id="receiveAccessorySave" class="btn-primary" type="submit">ยืนยันรับคืน</button><button id="receiveAccessoryClose" class="btn-secondary" type="button">ปิด</button></div>
+    </form>
+  </dialog>
+  <script src="app.js?v=20260923-accessory-debts"></script>
 </body>
 </html>
