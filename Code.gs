@@ -21,6 +21,7 @@ const STATUS = {
 };
 
 const HEADERS = {
+  TermAudits: ['audit_id', 'audit_key', 'academic_year', 'term', 'student_id', 'full_name', 'grade_level', 'transaction_id', 'device_key', 'asset_no', 'checked_on', 'inspector', 'device_result', 'pen', 'pen_charger', 'charger', 'note', 'admin_id', 'created_at'],
   AccessoryHistory: ['inspection_id', 'device_key', 'transaction_id', 'borrower_id', 'inspection_date', 'pen', 'pen_charger', 'charger', 'note', 'created_at', 'admin_id', 'received_items', 'received_at', 'receipt_note'],
   RepairHistory: ['repair_id', 'device_key', 'event', 'note', 'admin_id', 'created_at'],
   Config: ['key', 'value', 'updated_at'],
@@ -91,6 +92,8 @@ function handleRequest(e) {
       listGradeGroups: () => listGradeGroups(),
       listUnborrowedStudentsByGrade: () => listUnborrowedStudentsByGrade(data),
       listAnnualStudentDeviceAudit: () => listAnnualStudentDeviceAudit(data),
+      validateTermAudit: () => processTermAudit(data, false),
+      importTermAudit: () => importTermAudit(data),
       listAvailableDevices: () => listAvailableDevices(),
       listAvailableDeviceReport: () => listAvailableDeviceReport(),
       listDeviceTrackingReport: () => listDeviceTrackingReport(),
@@ -1536,6 +1539,7 @@ function listAnnualStudentDeviceAudit(data) {
         full_name: student.full_name || '',
         grade_level: gradeLevel,
         borrow_status: loan ? 'ยืมแล้ว' : 'ยังไม่ได้ยืม',
+        transaction_id: loan ? loan.transaction_id : '',
         asset_no: loan ? device.asset_no || '' : '',
         device_key: loan ? loan.device_key || '' : '',
         borrow_date: loan ? loan.borrow_date || '' : '',
@@ -1573,6 +1577,63 @@ function getGradePrefix(value) {
   if (!text) return '';
   const match = text.match(/^(.+?\d+)(?:[/\\-]|ห้อง)/i);
   return match ? match[1] : text;
+}
+
+function importTermAudit(data) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try { return processTermAudit(data, true); }
+  finally { lock.releaseLock(); }
+}
+
+function processTermAudit(data, write) {
+  const adminId = requireRepairAdmin(data);
+  if (!Array.isArray(data.rows) || !data.rows.length || data.rows.length > 2000) throw new Error('รองรับไฟล์ 1–2000 แถวต่อครั้ง');
+  const students = indexBy(getRows(SHEETS.STUDENTS), 'student_id');
+  const devices = indexBy(getRows(SHEETS.CHROMEBOOKS), 'device_key');
+  const transactions = getRows(SHEETS.TRANSACTIONS);
+  const txById = indexBy(transactions, 'transaction_id');
+  const previous = indexBy(getRows('TermAudits'), 'audit_key');
+  const seen = new Set();
+  const pending = [];
+  const results = [];
+  const fields = ['academic_year', 'term', 'student_id', 'transaction_id', 'device_key', 'asset_no', 'checked_on', 'inspector', 'device_result', 'pen', 'pen_charger', 'charger', 'note'];
+  data.rows.forEach((raw, index) => {
+    const row = {};
+    fields.forEach((key) => { row[key] = String(raw[key] == null ? '' : raw[key]).trim(); });
+    const result = { source_sheet: String(raw.source_sheet || ''), source_row: Number(raw.source_row || index + 2), student_id: row.student_id };
+    if (!['checked_on', 'inspector', 'device_result', 'pen', 'pen_charger', 'charger', 'note'].some((key) => row[key])) {
+      results.push(Object.assign(result, { status: 'skipped', message: 'ยังไม่ได้กรอกผลตรวจ' })); return;
+    }
+    let error = '';
+    const student = students[row.student_id];
+    const tx = txById[row.transaction_id];
+    const device = devices[row.device_key];
+    if (!/^25\d{2}$/.test(row.academic_year) || !['1', '2'].includes(row.term)) error = 'ปีการศึกษาต้องเป็น พ.ศ. และเทอม 1 หรือ 2';
+    else if (!student) error = 'ไม่พบรหัสนักเรียน';
+    else if (!row.checked_on || normalizeBulkLoanDate(row.checked_on) !== row.checked_on) error = 'วันที่ตรวจต้องเป็น YYYY-MM-DD (ค.ศ.)';
+    else if (!row.inspector || row.inspector.length > 200) error = 'กรุณาระบุผู้ตรวจ ไม่เกิน 200 ตัวอักษร';
+    else if (!['พบเครื่อง-ปกติ', 'พบเครื่อง-ชำรุด', 'ไม่พบเครื่อง', 'ไม่ได้ยืม'].includes(row.device_result)) error = 'ผลตรวจเครื่องไม่ถูกต้อง';
+    else if (row.note.length > 2000) error = 'หมายเหตุยาวเกิน 2000 ตัวอักษร';
+    else if (row.device_result === 'ไม่ได้ยืม') {
+      if (row.device_key || row.transaction_id || row.asset_no || transactions.some((item) => isBorrowingStatus(item.status) && getTransactionBorrowerKey(item) === 'student:' + row.student_id)) error = 'นักเรียนมีรายการยืม กรุณาดาวน์โหลดไฟล์ใหม่';
+      else if (['pen', 'pen_charger', 'charger'].some((key) => row[key] && row[key] !== 'ยังไม่ได้ตรวจ')) error = 'ผู้ไม่ได้ยืมไม่ต้องกรอกผลตรวจอุปกรณ์';
+    } else if (!tx || !isBorrowingStatus(tx.status) || getTransactionBorrowerKey(tx) !== 'student:' + row.student_id || String(tx.device_key) !== row.device_key || !device || String(device.asset_no || '') !== row.asset_no) error = 'เครื่องหรือผู้ยืมเปลี่ยนแล้ว กรุณาดาวน์โหลดไฟล์ใหม่';
+    else if (['pen', 'pen_charger', 'charger'].some((key) => !['ครบ', 'ขาด', 'ชำรุด', 'ยังไม่ได้ตรวจ'].includes(row[key]))) error = 'กรุณาระบุผลตรวจอุปกรณ์ทั้ง 3 ชิ้น';
+    row.audit_key = JSON.stringify([row.academic_year, row.term, row.student_id]);
+    if (!error && seen.has(row.audit_key)) error = 'นักเรียนซ้ำในปีและเทอมเดียวกันภายในไฟล์';
+    seen.add(row.audit_key);
+    if (error) { results.push(Object.assign(result, { status: 'error', message: error })); return; }
+    const old = previous[row.audit_key];
+    if (old && fields.every((key) => String(old[key] || '') === row[key])) {
+      results.push(Object.assign(result, { status: 'skipped', message: 'บันทึกข้อมูลชุดนี้แล้ว' })); return;
+    }
+    pending.push(Object.assign(row, { audit_id: Utilities.getUuid(), full_name: student.full_name || '', grade_level: student.grade_level || '', admin_id: adminId, created_at: nowText() }));
+    results.push(Object.assign(result, { status: 'ready', message: old ? 'พร้อมบันทึกผลฉบับแก้ไข' : 'พร้อมบันทึก' }));
+  });
+  const errors = results.filter((row) => row.status === 'error').length;
+  if (write && !errors && pending.length) { appendObjects('TermAudits', pending); SpreadsheetApp.flush(); }
+  return { results, error_count: errors, ready_count: pending.length, saved_count: write && !errors ? pending.length : 0 };
 }
 
 function compareStudentsById(a, b) {

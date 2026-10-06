@@ -239,6 +239,7 @@
               <button class="tab-btn active" data-page="assign">ยืมเครื่อง</button>
               <button class="tab-btn" data-page="return">คืนหลายคน</button>
               <button class="tab-btn" data-page="accessoryDebts">อุปกรณ์ค้างคืน</button>
+              <button class="tab-btn" data-page="termAudit">ตรวจประจำเทอม</button>
               <button class="tab-btn" data-page="requests">คำขอยืม</button>
               <button class="tab-btn" data-page="deviceReport">ทะเบียนเครื่อง/Excel</button>
               <button class="tab-btn" data-page="import">นำเข้า Excel</button>
@@ -376,6 +377,20 @@
             </div>
             <p id="accessoryDebtMeta" role="status"></p>
             <div style="overflow:auto" tabindex="0" role="region" aria-label="รายการอุปกรณ์ค้างคืน"><table class="w-full" style="min-width:1000px"><thead><tr><th>เลขทรัพย์สิน / รหัสเครื่อง</th><th>ผู้ยืมเดิม</th><th>ชั้น / ห้อง</th><th>อุปกรณ์</th><th>สถานะ</th><th>จัดการ</th></tr></thead><tbody id="accessoryDebtRows"></tbody></table></div>
+          </section>
+
+          <section id="termAuditPage" class="admin-page hidden space-y-4">
+            <h3 class="text-lg font-bold">ตรวจประจำเทอม</h3>
+            <div class="flex flex-wrap items-end gap-3">
+              <label>ปีการศึกษา (พ.ศ.)<input id="termAuditYear" class="input" type="number" min="2500" max="2599" value="2569"></label>
+              <label>เทอม<select id="termAuditTerm" class="input"><option>1</option><option>2</option></select></label>
+              <label>ระดับชั้น<select id="termAuditGrade" class="input"><option value="">เลือกระดับชั้น</option></select></label>
+              <button id="termAuditDownload" class="btn-secondary" type="button">ดาวน์โหลดไฟล์ตรวจประจำเทอม</button>
+            </div>
+            <label class="block">ไฟล์ผลตรวจ (.xlsx)<input id="termAuditFile" class="input" type="file" accept=".xlsx"></label>
+            <div class="flex flex-wrap gap-3"><button id="termAuditValidate" class="btn-secondary" type="button" disabled>ตรวจสอบไฟล์</button><button id="termAuditSave" class="btn-primary" type="button" disabled>บันทึกผลตรวจทั้งหมด</button></div>
+            <p id="termAuditMeta" role="status"></p>
+            <div style="overflow:auto" tabindex="0" role="region" aria-label="ผลตรวจสอบไฟล์ประจำเทอม"><table class="w-full" style="min-width:650px"><thead><tr><th>ห้อง / แถว</th><th>รหัสนักเรียน</th><th>ผลตรวจสอบ</th></tr></thead><tbody id="termAuditPreview"></tbody></table></div>
           </section>
 
           <section id="requestsPage" class="admin-page hidden space-y-5">
@@ -651,6 +666,7 @@
       <div class="flex gap-3"><button id="receiveAccessorySave" class="btn-primary" type="submit">ยืนยันรับคืน</button><button id="receiveAccessoryClose" class="btn-secondary" type="button">ปิด</button></div>
     </form>
   </dialog>
-  <script src="app.js?v=20260923-accessory-debts"></script>
+  <script src="app.js?v=20261006-term-audit"></script>
+  <script src="term-audit.js?v=20261006-term-audit"></script>
 </body>
 </html>

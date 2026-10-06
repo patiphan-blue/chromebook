@@ -277,6 +277,7 @@ function showAdminPage(page) {
   });
   if (page === 'return') loadClasses();
   if (page === 'accessoryDebts') loadAccessoryDebts();
+  if (page === 'termAudit') loadTermAuditGrades();
   if (page === 'assign') {
     loadClasses();
     loadAvailableDeviceOptions();
