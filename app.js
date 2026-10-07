@@ -277,7 +277,7 @@ function showAdminPage(page) {
   });
   if (page === 'return') loadClasses();
   if (page === 'accessoryDebts') loadAccessoryDebts();
-  if (page === 'termAudit') loadTermAuditGrades();
+  if (page === 'termAudit') { loadTermAuditGrades(); loadTermAuditProgress(); }
   if (page === 'assign') {
     loadClasses();
     loadAvailableDeviceOptions();
@@ -394,8 +394,8 @@ async function loadDashboardTablesInBackground(loadToken, dashboard, availableDe
   try {
     const tables = await api('dashboardTables');
     if (loadToken !== state.dashboardLoadToken) return;
-    const deviceTracking = Array.isArray(dashboard.device_tracking)
-      ? dashboard.device_tracking
+    const deviceTracking = Array.isArray(tables.devices) ? tables.devices
+      : Array.isArray(dashboard.device_tracking) ? dashboard.device_tracking
       : buildDeviceTrackingFallback(availableDevices, tables);
 
     state.dashboardTables = {

@@ -93,6 +93,7 @@ function handleRequest(e) {
       listUnborrowedStudentsByGrade: () => listUnborrowedStudentsByGrade(data),
       listAnnualStudentDeviceAudit: () => listAnnualStudentDeviceAudit(data),
       validateTermAudit: () => processTermAudit(data, false),
+      listTermAuditProgress: () => listTermAuditProgress(data),
       importTermAudit: () => importTermAudit(data),
       listAvailableDevices: () => listAvailableDevices(),
       listAvailableDeviceReport: () => listAvailableDeviceReport(),
@@ -398,14 +399,18 @@ function reconcileDeviceRows(chromebooks, transactions) {
 }
 
 function getDashboardTables() {
-  const studentsById = indexBy(getRows(SHEETS.STUDENTS), 'student_id');
-  const teachersById = indexBy(getRows(SHEETS.TEACHERS), 'teacher_id');
-  const rows = getRows(SHEETS.TRANSACTIONS)
+  const students = getRows(SHEETS.STUDENTS);
+  const teachers = getRows(SHEETS.TEACHERS);
+  const transactions = getRows(SHEETS.TRANSACTIONS);
+  const studentsById = indexBy(students, 'student_id');
+  const teachersById = indexBy(teachers, 'teacher_id');
+  const rows = transactions
     .slice()
     .reverse()
     .map((tx) => formatDashboardTransaction(tx, studentsById, teachersById));
 
   return {
+    devices: buildDeviceTrackingRows(getRows(SHEETS.CHROMEBOOKS), transactions, students, teachers),
     students: rows.filter((row) => row.borrower_type === 'student' && row.status !== STATUS.RETURNED),
     teachers: rows.filter((row) => row.borrower_type === 'teacher' && row.status !== STATUS.RETURNED),
     returned: rows.filter((row) => row.status === STATUS.RETURNED),
@@ -1581,6 +1586,33 @@ function getGradePrefix(value) {
   if (!text) return '';
   const match = text.match(/^(.+?\d+)(?:[/\\-]|ห้อง)/i);
   return match ? match[1] : text;
+}
+
+function listTermAuditProgress(data) {
+  requireRepairAdmin(data);
+  const year = String(data.academic_year || '').trim();
+  const term = String(data.term || '').trim();
+  if (!/^25\d{2}$/.test(year) || !['1', '2'].includes(term)) throw new Error('กรุณาเลือกปีการศึกษาและเทอม');
+  const grade = String(data.grade_prefix || '').trim();
+  const latest = indexBy(getRows('TermAudits').filter((row) => String(row.academic_year) === year && String(row.term) === term), 'student_id');
+  const active = indexBy(getRows(SHEETS.TRANSACTIONS).filter((row) => isBorrowingStatus(row.status) && getTransactionBorrowerType(row) === 'student').map((row) => Object.assign({}, row, { student_id: String(row.student_id || row.borrower_id) })), 'student_id');
+  const devices = indexBy(getRows(SHEETS.CHROMEBOOKS), 'device_key');
+  const students = Array.from(new Map(getRows(SHEETS.STUDENTS).filter((row) => row.student_id && (!grade || getGradePrefix(row.grade_level) === grade)).map((row) => [String(row.student_id), row])).values());
+  const rows = students.sort((a, b) => naturalClassSort(a.grade_level, b.grade_level) || compareStudentsById(a, b)).map((student) => {
+    const id = String(student.student_id), check = latest[id], loan = active[id];
+    const current = check && (loan ? String(check.transaction_id) === String(loan.transaction_id) && String(check.device_key) === String(loan.device_key) : !check.transaction_id && check.device_result === 'ไม่ได้ยืม');
+    return { student_id: id, full_name: student.full_name || '', grade_level: student.grade_level || '',
+      audit_status: !check ? 'ยังไม่ได้ตรวจ' : current ? 'ตรวจแล้ว' : 'ต้องตรวจใหม่',
+      borrow_status: loan ? 'กำลังยืม' : 'ไม่ได้ยืม', device_key: loan ? loan.device_key : '',
+      asset_no: loan ? (devices[loan.device_key] || {}).asset_no || '' : '',
+      checked_on: check ? check.checked_on : '', inspector: check ? check.inspector : '',
+      device_result: check ? check.device_result : '', pen: check ? check.pen : '',
+      pen_charger: check ? check.pen_charger : '', charger: check ? check.charger : '', note: check ? check.note : '' };
+  });
+  return { academic_year: year, term, generated_at: nowText(), rows,
+    total: rows.length, checked: rows.filter((row) => row.audit_status === 'ตรวจแล้ว').length,
+    unchecked: rows.filter((row) => row.audit_status === 'ยังไม่ได้ตรวจ').length,
+    changed: rows.filter((row) => row.audit_status === 'ต้องตรวจใหม่').length };
 }
 
 function importTermAudit(data) {

@@ -391,6 +391,17 @@
             <div class="flex flex-wrap gap-3"><button id="termAuditValidate" class="btn-secondary" type="button" disabled>ตรวจสอบไฟล์</button><button id="termAuditSave" class="btn-primary" type="button" disabled>บันทึกผลตรวจทั้งหมด</button></div>
             <p id="termAuditMeta" role="status"></p>
             <div style="overflow:auto" tabindex="0" role="region" aria-label="ผลตรวจสอบไฟล์ประจำเทอม"><table class="w-full" style="min-width:650px"><thead><tr><th>ห้อง / แถว</th><th>รหัสนักเรียน</th><th>ผลตรวจสอบ</th></tr></thead><tbody id="termAuditPreview"></tbody></table></div>
+            <section class="space-y-3 border-t pt-4">
+              <h3 class="text-lg font-bold">ติดตามผลตรวจรายคน</h3>
+              <div class="flex flex-wrap gap-3 items-end">
+                <label>ห้อง<select id="termProgressRoom" class="input"><option value="">ทุกห้อง</option></select></label>
+                <label>ผลตรวจ<select id="termProgressStatus" class="input"><option value="">ทั้งหมด</option><option>ยังไม่ได้ตรวจ</option><option>ตรวจแล้ว</option><option>ต้องตรวจใหม่</option></select></label>
+                <label>ค้นหารหัส / ชื่อ / เครื่อง<input id="termProgressQuery" class="input" type="search"></label>
+                <button id="termProgressReload" class="btn-secondary" type="button">โหลดผลตรวจล่าสุด</button>
+              </div>
+              <p id="termProgressMeta" role="status"></p>
+              <div style="overflow:auto" tabindex="0" role="region" aria-label="ติดตามผลตรวจรายคน"><table class="w-full" style="min-width:1000px"><thead><tr><th>สถานะตรวจ</th><th>รหัส / ชื่อ</th><th>ห้อง</th><th>เครื่องปัจจุบัน</th><th>วันที่ / ผู้ตรวจ</th><th>ผลตรวจล่าสุด</th></tr></thead><tbody id="termProgressRows"></tbody></table></div>
+            </section>
           </section>
 
           <section id="requestsPage" class="admin-page hidden space-y-5">
@@ -666,7 +677,7 @@
       <div class="flex gap-3"><button id="receiveAccessorySave" class="btn-primary" type="submit">ยืนยันรับคืน</button><button id="receiveAccessoryClose" class="btn-secondary" type="button">ปิด</button></div>
     </form>
   </dialog>
-  <script src="app.js?v=20261007-linked-audits"></script>
-  <script src="term-audit.js?v=20261007-linked-audits"></script>
+  <script src="app.js?v=20261007-audit-progress"></script>
+  <script src="term-audit.js?v=20261007-audit-progress"></script>
 </body>
 </html>

@@ -142,9 +142,56 @@ async function submitTermAudit(write) {
     if (write && result.saved_count > 0) {
       localStorage.removeItem(DASHBOARD_CACHE_KEY);
       await loadPublicDashboard();
+      await loadTermAuditProgress();
     }
   } catch (error) { auditElement('Meta').textContent = error.message; }
   finally { auditElement('File').disabled = false; auditElement('Validate').disabled = false; }
 }
 auditElement('Validate').addEventListener('click', () => submitTermAudit(false));
 auditElement('Save').addEventListener('click', () => submitTermAudit(true));
+
+let termProgressReport = null;
+let termProgressRequest = 0;
+const progressElement = (id) => document.getElementById('termProgress' + id);
+
+async function loadTermAuditProgress() {
+  const request = ++termProgressRequest;
+  termProgressReport = null;
+  progressElement('Rows').innerHTML = '';
+  progressElement('Meta').textContent = 'กำลังโหลดผลตรวจ...';
+  try {
+    const report = await api('listTermAuditProgress', {
+      academic_year: auditElement('Year').value, term: auditElement('Term').value,
+      grade_prefix: auditElement('Grade').value, repair_token: state.admin && state.admin.repair_token,
+    });
+    if (request !== termProgressRequest || !state.admin) return;
+    termProgressReport = report;
+    const selected = progressElement('Room').value;
+    const rooms = Array.from(new Set(report.rows.map((row) => row.grade_level).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
+    progressElement('Room').innerHTML = '<option value="">ทุกห้อง</option>' + rooms.map((room) => `<option value="${escapeAttr(room)}">${escapeHtml(room)}</option>`).join('');
+    if (rooms.includes(selected)) progressElement('Room').value = selected;
+    renderTermAuditProgress();
+  } catch (error) { if (request === termProgressRequest) progressElement('Meta').textContent = error.message; }
+}
+
+function renderTermAuditProgress() {
+  if (!termProgressReport) return;
+  const room = progressElement('Room').value;
+  const status = progressElement('Status').value;
+  const query = progressElement('Query').value.trim().toLowerCase();
+  const scoped = termProgressReport.rows.filter((row) => !room || row.grade_level === room);
+  const rows = scoped.filter((row) => (!status || row.audit_status === status) && [row.student_id, row.full_name, row.asset_no, row.device_key].join(' ').toLowerCase().includes(query));
+  const count = (value) => scoped.filter((row) => row.audit_status === value).length;
+  progressElement('Meta').textContent = `ปี ${termProgressReport.academic_year} เทอม ${termProgressReport.term} · ${room || 'ทุกห้องในระดับชั้นที่เลือก'} ${scoped.length} คน · ตรวจแล้ว ${count('ตรวจแล้ว')} · ยังไม่ได้ตรวจ ${count('ยังไม่ได้ตรวจ')} · ต้องตรวจใหม่ ${count('ต้องตรวจใหม่')} · แสดง ${rows.length} คน`;
+  progressElement('Rows').innerHTML = rows.length ? rows.map((row) => `<tr>
+    <td><strong>${escapeHtml(row.audit_status)}</strong>${row.audit_status === 'ต้องตรวจใหม่' ? '<br>รายการยืมเปลี่ยนหลังตรวจ' : ''}</td>
+    <td>${escapeHtml(row.student_id)}<br>${escapeHtml(row.full_name)}</td><td>${escapeHtml(row.grade_level)}</td>
+    <td>${escapeHtml(row.borrow_status)}<br>${escapeHtml(row.asset_no || '-')}<br>${escapeHtml(row.device_key || '')}</td>
+    <td>${escapeHtml(row.checked_on || '-')}<br>${escapeHtml(row.inspector || '')}</td>
+    <td>${escapeHtml(row.device_result || '-')}<br>${Object.entries(ACCESSORY_LABELS).map(([key, label]) => `${label}: ${escapeHtml(row[key] || '-')}`).join('<br>')}${row.note ? `<br>${escapeHtml(row.note)}` : ''}</td>
+  </tr>`).join('') : '<tr><td colspan="6">ไม่พบรายชื่อตามเงื่อนไข</td></tr>';
+}
+['Year', 'Term', 'Grade'].forEach((id) => auditElement(id).addEventListener('change', loadTermAuditProgress));
+['Room', 'Status'].forEach((id) => progressElement(id).addEventListener('change', renderTermAuditProgress));
+progressElement('Query').addEventListener('input', renderTermAuditProgress);
+progressElement('Reload').addEventListener('click', loadTermAuditProgress);
