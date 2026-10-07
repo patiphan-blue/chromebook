@@ -1933,7 +1933,10 @@ function accessorySummary(value) {
   if (!value) return '<p class="text-sm">อุปกรณ์: ยังไม่มีผลตรวจ</p>';
   try {
     const check = typeof value === 'string' ? JSON.parse(value) : value;
-    return `<div class="text-sm" style="white-space:normal;overflow-wrap:anywhere">${[['pen', 'ปากกา'], ['pen_charger', 'ที่ชาร์จปากกา'], ['charger', 'สายชาร์จ / ที่ชาร์จเครื่อง']].map(([key, label]) => `<p>${label}: <strong>${escapeHtml(check[key] || 'ยังไม่ได้ตรวจ')}</strong></p>`).join('')}<p>ตรวจคืน ${escapeHtml(check.inspection_date || '-')}</p>${check.note ? `<p>${escapeHtml(check.note)}</p>` : ''}${check.received_at ? `<p>รับคืนเพิ่มเติม ${escapeHtml(check.received_at)}: ${escapeHtml(String(check.received_items || '').split(',').map((key) => ACCESSORY_LABELS[key] || key).join(', '))}</p><p>${escapeHtml(check.receipt_note || '')}</p>` : ''}</div>`;
+    const sourceLabel = check.source === 'term'
+      ? `ตรวจประจำเทอม ${check.term || '-'} / ${check.academic_year || '-'}`
+      : 'ตรวจอุปกรณ์ตอนรับคืน';
+    return `<div class="text-sm" style="white-space:normal;overflow-wrap:anywhere"><p><strong>${escapeHtml(sourceLabel)}</strong></p>${check.device_result ? `<p>${escapeHtml(check.device_result)}</p>` : ''}${[['pen', 'ปากกา'], ['pen_charger', 'ที่ชาร์จปากกา'], ['charger', 'สายชาร์จ / ที่ชาร์จเครื่อง']].map(([key, label]) => `<p>${label}: <strong>${escapeHtml(check[key] || 'ยังไม่ได้ตรวจ')}</strong></p>`).join('')}<p>วันที่ตรวจ ${escapeHtml(check.inspection_date || '-')}</p>${check.note ? `<p>${escapeHtml(check.note)}</p>` : ''}${check.received_at ? `<p>รับคืนเพิ่มเติม ${escapeHtml(check.received_at)}: ${escapeHtml(String(check.received_items || '').split(',').map((key) => ACCESSORY_LABELS[key] || key).join(', '))}</p><p>${escapeHtml(check.receipt_note || '')}</p>` : ''}</div>`;
   } catch (_) { return '<p>ไม่สามารถอ่านผลตรวจอุปกรณ์ได้</p>'; }
 }
 
@@ -1963,7 +1966,7 @@ function renderAccessoryDebts() {
   document.getElementById('accessoryDebtRows').innerHTML = rows.length ? rows.map((row) => `<tr>
     <td style="overflow-wrap:anywhere">${escapeHtml(row.asset_no || '-')}<br>${escapeHtml(row.device_key)}</td>
     <td>${escapeHtml(row.full_name || '-')}<br>${escapeHtml(row.borrower_id || '-')}</td>
-    <td>${escapeHtml(row.grade_level || '-')}</td>
+    <td>${escapeHtml(row.grade_level || '-')}<br>${row.source === 'term' ? `ตรวจเทอม ${escapeHtml(row.term)} / ${escapeHtml(row.academic_year)}` : 'ตรวจตอนรับคืน'}</td>
     <td>${Object.entries(ACCESSORY_LABELS).map(([key, label]) => `<p>${label}: <strong>${escapeHtml(row[key] || 'ยังไม่ได้ตรวจ')}</strong></p>`).join('')}</td>
     <td>${row.pending_items.length ? 'ยังค้างคืน' : row.received_at ? 'คืนอุปกรณ์ครบแล้ว' : 'ไม่มียอดค้างตามผลตรวจ'}${row.received_at ? `<br>รับคืนล่าสุด ${escapeHtml(row.received_at)}` : ''}</td>
     <td>${row.pending_items.length && row.can_receive ? `<button type="button" class="btn-primary receive-accessories" data-inspection="${escapeAttr(row.inspection_id)}">รับคืนอุปกรณ์</button>` : ''}<button type="button" class="btn-secondary accessory-history" data-device="${escapeAttr(row.device_key)}">ประวัติอุปกรณ์</button></td>

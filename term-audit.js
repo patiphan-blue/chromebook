@@ -43,7 +43,7 @@ function makeTermAuditWorkbook(report, year, term) {
     ['คนที่ไม่ได้ยืม: กรอกวันที่ ผู้ตรวจ และผลตรวจเครื่องเป็น ไม่ได้ยืม เว้นอุปกรณ์ว่าง'],
     ['แถวที่ยังไม่ได้กรอกผลตรวจจะถูกข้าม รวมหลายห้องในไฟล์เดียวได้ ไม่เกิน 2000 แถว'],
     ['อัปโหลดที่เมนูตรวจประจำเทอม ไม่ใช่นำเข้ารายการยืม'],
-    ['ผลตรวจไม่เปลี่ยนสถานะยืม คืน ซ่อม หรือยอดอุปกรณ์ค้างคืน'],
+    ['ผลตรวจไม่เปลี่ยนสถานะยืม คืน หรือซ่อม อุปกรณ์ขาดหรือชำรุดจะแสดงในเมนูอุปกรณ์ค้างคืน'],
   ]);
   instructions['!cols'] = [{ wch: 110 }];
   XLSX.utils.book_append_sheet(workbook, instructions, 'คำแนะนำ');
@@ -139,6 +139,10 @@ async function submitTermAudit(write) {
     if (blank) throw new Error(`หน้าเว็บอ่านผลตรวจได้ ${entered.length} คน แต่ Apps Script แจ้งว่าว่าง กรุณาอัปเดต Code.gs และ Deploy เวอร์ชันใหม่`);
     auditElement('Meta').textContent = errors ? `กรอก ${entered.length} คน · พบ ${errors} แถวที่ต้องแก้ไข ยังไม่มีการบันทึก` : write ? `บันทึก ${result.saved_count} รายการแล้ว` : ready ? `พร้อมบันทึก ${ready} รายการ · ข้ามแถวที่ยังไม่ได้กรอก ${termAuditRows.length - entered.length} แถว` : `ผลตรวจ ${entered.length} คนบันทึกไว้แล้ว ไม่มีข้อมูลใหม่ให้บันทึก`;
     auditElement('Save').disabled = write || errors > 0 || !ready;
+    if (write && result.saved_count > 0) {
+      localStorage.removeItem(DASHBOARD_CACHE_KEY);
+      await loadPublicDashboard();
+    }
   } catch (error) { auditElement('Meta').textContent = error.message; }
   finally { auditElement('File').disabled = false; auditElement('Validate').disabled = false; }
 }

@@ -22,7 +22,7 @@ const STATUS = {
 
 const HEADERS = {
   TermAudits: ['audit_id', 'audit_key', 'academic_year', 'term', 'student_id', 'full_name', 'grade_level', 'transaction_id', 'device_key', 'asset_no', 'checked_on', 'inspector', 'device_result', 'pen', 'pen_charger', 'charger', 'note', 'admin_id', 'created_at'],
-  AccessoryHistory: ['inspection_id', 'device_key', 'transaction_id', 'borrower_id', 'inspection_date', 'pen', 'pen_charger', 'charger', 'note', 'created_at', 'admin_id', 'received_items', 'received_at', 'receipt_note'],
+  AccessoryHistory: ['inspection_id', 'device_key', 'transaction_id', 'borrower_id', 'inspection_date', 'pen', 'pen_charger', 'charger', 'note', 'created_at', 'admin_id', 'received_items', 'received_at', 'receipt_note', 'source', 'academic_year', 'term', 'device_result', 'inspector'],
   RepairHistory: ['repair_id', 'device_key', 'event', 'note', 'admin_id', 'created_at'],
   Config: ['key', 'value', 'updated_at'],
   Admins: ['admin_id', 'username', 'password', 'full_name', 'role', 'is_active', 'created_at'],
@@ -73,7 +73,7 @@ function handleRequest(e) {
       updateReturnedAccessories: () => updateReturnedAccessories(data),
       listAccessoryDebts: () => listAccessoryDebts(data),
       receiveAccessories: () => receiveAccessories(data),
-      accessoryHistory: () => { requireRepairAdmin(data); return getRows('AccessoryHistory').filter((row) => String(row.device_key) === String(data.device_key)).reverse(); },
+      accessoryHistory: () => { requireRepairAdmin(data); return getAccessoryEvents().filter((row) => String(row.device_key) === String(data.device_key)).reverse(); },
       login: () => login(data),
       dashboardSummary: () => getDashboardSummary(),
       dashboard: () => getDashboard(),
@@ -284,6 +284,8 @@ function getDashboardSummary() {
 }
 
 function buildDeviceTrackingRows(chromebooks, transactions, students, teachers) {
+  const checksByTransaction = indexBy(getAccessoryEvents(), 'transaction_id');
+  const lastTransactionByDevice = indexBy(transactions, 'device_key');
   const studentsById = indexBy(students, 'student_id');
   const teachersById = indexBy(teachers, 'teacher_id');
   const activeByDevice = {};
@@ -296,6 +298,8 @@ function buildDeviceTrackingRows(chromebooks, transactions, students, teachers) 
   return chromebooks.map((device) => {
     const deviceKey = String(device.device_key || '').trim();
     const active = activeByDevice[deviceKey] || null;
+    const checkTransaction = active || lastTransactionByDevice[deviceKey];
+    const accessoryCheck = checkTransaction ? checksByTransaction[checkTransaction.transaction_id] : null;
     const status = normalizeDeviceStatus(device.device_status) || 'ไม่ระบุ';
     const borrowerType = active ? getTransactionBorrowerType(active) : '';
     const borrowerId = String(active
@@ -310,7 +314,7 @@ function buildDeviceTrackingRows(chromebooks, transactions, students, teachers) 
     return {
       device_key: deviceKey,
       asset_no: device.asset_no || '',
-      accessory_check: device.accessory_check || '',
+      accessory_check: accessoryCheck ? JSON.stringify(accessoryCheck) : '',
       device_status: status,
       borrower_type: borrowerType || (teachersById[borrowerId] ? 'teacher' : borrowerId ? 'student' : ''),
       borrower_id: status === STATUS.AVAILABLE ? '' : borrowerId,
@@ -1990,12 +1994,24 @@ function repairHistory(data) {
   return getRows('RepairHistory').filter((row) => String(row.device_key) === key).reverse();
 }
 
+function getAccessoryEvents() {
+  const audits = getRows('TermAudits').filter((row) => row.device_key && row.transaction_id).map((row) => Object.assign({}, row, {
+    inspection_id: row.audit_id, borrower_id: row.student_id, inspection_date: row.checked_on, source: 'term',
+  }));
+  // An older inspection uploaded later must not undo a subsequent equipment receipt.
+  return audits.concat(getRows('AccessoryHistory')).sort((a, b) => {
+    const dateA = String(a.received_at || a.inspection_date || a.created_at || '').slice(0, 10);
+    const dateB = String(b.received_at || b.inspection_date || b.created_at || '').slice(0, 10);
+    return dateA.localeCompare(dateB) || String(a.created_at || '').localeCompare(String(b.created_at || ''));
+  });
+}
+
 function listAccessoryDebts(data) {
   requireRepairAdmin(data);
   const latest = new Map();
   const affected = new Set();
   const keys = ['pen', 'pen_charger', 'charger'];
-  getRows('AccessoryHistory').forEach((row) => {
+  getAccessoryEvents().forEach((row) => {
     const id = String(row.transaction_id || '');
     if (!id) return;
     latest.set(id, row);
@@ -2013,7 +2029,7 @@ function listAccessoryDebts(data) {
       full_name: borrower.full_name || '', grade_level: borrower.grade_level || '',
       asset_no: (devices[check.device_key] || {}).asset_no || '',
       pending_items: keys.filter((key) => check[key] === 'ขาด' || check[key] === 'ชำรุด'),
-      can_receive: String(tx.status).trim() === STATUS.RETURNED,
+      can_receive: String(tx.status).trim() === STATUS.RETURNED || isBorrowingStatus(tx.status),
     });
   }).reverse();
 }
@@ -2030,8 +2046,8 @@ function receiveAccessories(data) {
   try {
     const transactions = getRows(SHEETS.TRANSACTIONS);
     const tx = transactions.find((row) => String(row.transaction_id) === id);
-    if (!tx || String(tx.status).trim() !== STATUS.RETURNED) throw new Error('ไม่พบรายการที่คืนแล้ว');
-    const previous = getRows('AccessoryHistory').filter((row) => String(row.transaction_id) === id).pop();
+    if (!tx || (!isBorrowingStatus(tx.status) && String(tx.status).trim() !== STATUS.RETURNED)) throw new Error('ไม่พบรายการยืมที่รับคืนอุปกรณ์ได้');
+    const previous = getAccessoryEvents().filter((row) => String(row.transaction_id) === id).pop();
     if (!previous || String(previous.inspection_id) !== String(data.inspection_id)) throw new Error('ข้อมูลเปลี่ยนแล้ว กรุณาโหลดรายการใหม่ก่อนรับคืน');
     if (items.some((key) => previous[key] !== 'ขาด' && previous[key] !== 'ชำรุด')) throw new Error('อุปกรณ์นี้ไม่มียอดค้างคืนแล้ว');
     const now = nowText();
