@@ -26,16 +26,18 @@ function makeTermAuditWorkbook(report, year, term) {
     const rows = room.students.map((student) => TERM_AUDIT_COLUMNS.map(([key]) => {
       if (key === 'academic_year') return year;
       if (key === 'term') return term;
-      if (['checked_on', 'inspector', 'device_result', 'pen', 'pen_charger', 'charger', 'note'].includes(key)) return '';
       return String(student[key] || '');
-    }));
-    const sheet = XLSX.utils.aoa_to_sheet([TERM_AUDIT_COLUMNS.map(([, label]) => label), ...rows]);
+    }).concat(student.audit_status || 'ยังไม่ได้ตรวจ'));
+    const sheet = XLSX.utils.aoa_to_sheet([TERM_AUDIT_COLUMNS.map(([, label]) => label).concat('สถานะการตรวจ'), ...rows]);
     sheet['!cols'] = TERM_AUDIT_COLUMNS.map(([key]) => ({ wch: ['full_name', 'device_key', 'transaction_id', 'note'].includes(key) ? 34 : 22 }));
-    sheet['!autofilter'] = { ref: 'A1:O' + (rows.length + 1) };
+    sheet['!cols'].push({ wch: 22 });
+    sheet['!autofilter'] = { ref: 'A1:P' + (rows.length + 1) };
     XLSX.utils.book_append_sheet(workbook, sheet, makeUniqueSheetName(room.grade_level, used));
   });
   const instructions = XLSX.utils.aoa_to_sheet([
     ['คำแนะนำการตรวจประจำเทอม'],
+    ['ผลตรวจเดิมของปีและเทอมที่เลือกเติมให้แล้ว อัปโหลดข้อมูลเดิมซ้ำจะถูกข้าม'],
+    ['สถานะ ต้องตรวจใหม่ หมายถึงรายการยืมเปลี่ยน ช่องผลตรวจจะเว้นว่างเพื่อให้ตรวจเครื่องปัจจุบัน'],
     ['กรอกเฉพาะวันที่ตรวจ ผู้ตรวจ ผลตรวจเครื่อง อุปกรณ์ และหมายเหตุ เก็บรหัสเดิมไว้'],
     ['วันที่ตรวจใช้ YYYY-MM-DD ค.ศ. เช่น 2026-10-06'],
     ['ผลตรวจเครื่อง: พบเครื่อง-ปกติ / พบเครื่อง-ชำรุด / ไม่พบเครื่อง / ไม่ได้ยืม'],
@@ -58,7 +60,8 @@ auditElement('Download').addEventListener('click', async () => {
   const button = auditElement('Download');
   setButtonBusy(button, true, 'กำลังสร้างไฟล์...');
   try {
-    const report = await api('listAnnualStudentDeviceAudit', { grade_prefix: grade });
+    const report = await api('listAnnualStudentDeviceAudit', { grade_prefix: grade, academic_year: year, term, repair_token: state.admin && state.admin.repair_token });
+    if (String(report.academic_year) !== year || String(report.term) !== term) throw new Error('กรุณาอัปเดต Code.gs และ Deploy เวอร์ชันใหม่เพื่อดาวน์โหลดผลตรวจเดิม');
     if (!report.total_students) throw new Error('ไม่พบรายชื่อนักเรียน');
     // Reject an old deployment that omits the loan identifier required for matching.
     if (report.rooms.some((room) => room.students.some((row) => row.device_key && !row.transaction_id))) throw new Error('กรุณาอัปเดต Code.gs และ Deploy เวอร์ชันใหม่');

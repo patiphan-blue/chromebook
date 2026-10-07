@@ -1518,6 +1518,14 @@ function listUnborrowedStudentsByGrade(data) {
 
 function listAnnualStudentDeviceAudit(data) {
   const gradePrefix = required(data.grade_prefix, 'ระดับชั้น');
+  const year = String(data.academic_year || '').trim();
+  const term = String(data.term || '').trim();
+  let checks = {};
+  if (year || term) {
+    requireRepairAdmin(data);
+    if (!/^25\d{2}$/.test(year) || !['1', '2'].includes(term)) throw new Error('กรุณาเลือกปีการศึกษาและเทอม');
+    checks = indexBy(getRows('TermAudits').filter((row) => String(row.academic_year) === year && String(row.term) === term), 'student_id');
+  }
   const inventory = getSynchronizedInventory(10000);
   const devicesByKey = indexBy(inventory.chromebooks, 'device_key');
   const activeLoanByStudentId = {};
@@ -1541,6 +1549,12 @@ function listAnnualStudentDeviceAudit(data) {
       const studentId = String(student.student_id || '').trim();
       const loan = activeLoanByStudentId[studentId] || null;
       const device = loan ? devicesByKey[loan.device_key] || {} : {};
+      const check = checks[studentId];
+      const current = check && (loan
+        ? String(check.transaction_id) === String(loan.transaction_id) && String(check.device_key) === String(loan.device_key)
+        : !check.transaction_id && check.device_result === 'ไม่ได้ยืม');
+      const savedFields = {};
+      ['checked_on', 'inspector', 'device_result', 'pen', 'pen_charger', 'charger', 'note'].forEach((key) => { savedFields[key] = current ? check[key] || '' : ''; });
       if (!grouped[gradeLevel]) grouped[gradeLevel] = [];
       grouped[gradeLevel].push({
         no: grouped[gradeLevel].length + 1,
@@ -1553,6 +1567,8 @@ function listAnnualStudentDeviceAudit(data) {
         device_key: loan ? loan.device_key || '' : '',
         borrow_date: loan ? loan.borrow_date || '' : '',
         original_student_no: student.student_no || '',
+        audit_status: !check ? 'ยังไม่ได้ตรวจ' : current ? 'ตรวจแล้ว' : 'ต้องตรวจใหม่',
+        ...savedFields,
       });
     });
 
@@ -1576,6 +1592,8 @@ function listAnnualStudentDeviceAudit(data) {
     total_students: rooms.reduce((sum, room) => sum + room.student_count, 0),
     total_borrowed: rooms.reduce((sum, room) => sum + room.borrowed_count, 0),
     total_unborrowed: rooms.reduce((sum, room) => sum + room.unborrowed_count, 0),
+    academic_year: year,
+    term,
     room_count: rooms.length,
     rooms,
   };
