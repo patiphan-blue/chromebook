@@ -8,6 +8,7 @@ const TERM_AUDIT_COLUMNS = [
 let termAuditRows = [];
 let termAuditGeneration = 0;
 const auditElement = (id) => document.getElementById('termAudit' + id);
+const hasTermAuditEntry = (row) => ['checked_on', 'inspector', 'device_result', 'pen', 'pen_charger', 'charger', 'note'].some((key) => String(row[key] || '').trim());
 
 async function loadTermAuditGrades() {
   const select = auditElement('Grade');
@@ -109,7 +110,7 @@ auditElement('File').addEventListener('change', async (event) => {
     if (generation !== termAuditGeneration) return;
     termAuditRows = rows;
     auditElement('Validate').disabled = false;
-    auditElement('Meta').textContent = `อ่าน ${rows.length} แถวแล้ว`;
+    auditElement('Meta').textContent = `อ่าน ${rows.length} แถว · กรอกผลตรวจ ${rows.filter(hasTermAuditEntry).length} คน`;
   } catch (error) { if (generation === termAuditGeneration) auditElement('Meta').textContent = error.message; }
 });
 
@@ -121,11 +122,23 @@ async function submitTermAudit(write) {
   auditElement('Validate').disabled = true;
   auditElement('Meta').textContent = write ? 'กำลังบันทึกผลตรวจ...' : 'กำลังตรวจสอบไฟล์...';
   try {
-    const result = await api(write ? 'importTermAudit' : 'validateTermAudit', { rows: termAuditRows, repair_token: state.admin && state.admin.repair_token });
+    if (!write) {
+      const file = auditElement('File').files[0];
+      if (!file) throw new Error('กรุณาเลือกไฟล์ผลตรวจอีกครั้ง');
+      termAuditRows = parseTermAuditWorkbook(XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false }));
+    }
+    const entered = termAuditRows.filter(hasTermAuditEntry);
+    if (!entered.length) throw new Error('ไม่พบผลตรวจในไฟล์ที่เลือก กรุณาบันทึกไฟล์ Excel แล้วเลือกไฟล์ที่บันทึกล่าสุดอีกครั้ง');
+    const result = await api(write ? 'importTermAudit' : 'validateTermAudit', { rows: entered, repair_token: state.admin && state.admin.repair_token });
     if (generation !== termAuditGeneration) return;
-    auditElement('Preview').innerHTML = result.results.map((row) => `<tr><td>${escapeHtml(row.source_sheet)} / ${row.source_row}</td><td>${escapeHtml(row.student_id)}</td><td>${escapeHtml(write && !result.error_count && row.status === 'ready' ? 'บันทึกแล้ว' : row.message)}</td></tr>`).join('');
-    auditElement('Meta').textContent = result.error_count ? `พบ ${result.error_count} แถวที่ต้องแก้ไข ยังไม่มีการบันทึก` : write ? `บันทึก ${result.saved_count} รายการแล้ว` : `พร้อมบันทึก ${result.ready_count} รายการ`;
-    auditElement('Save').disabled = write || result.error_count > 0 || !result.ready_count;
+    if (!Array.isArray(result.results) || result.results.length !== entered.length) throw new Error('คำตอบจาก Apps Script ไม่ตรงกับไฟล์ กรุณาตรวจว่าเว็บใช้ Deployment ของ Code.gs เวอร์ชันล่าสุด');
+    const ready = result.results.filter((row) => row.status === 'ready').length;
+    const errors = result.results.filter((row) => row.status === 'error').length;
+    const blank = result.results.filter((row) => row.message === 'ยังไม่ได้กรอกผลตรวจ').length;
+    auditElement('Preview').innerHTML = result.results.slice().sort((a, b) => Number(b.status === 'error') - Number(a.status === 'error')).map((row) => `<tr><td>${escapeHtml(row.source_sheet)} / ${row.source_row}</td><td>${escapeHtml(row.student_id)}</td><td>${escapeHtml(write && !errors && row.status === 'ready' ? 'บันทึกแล้ว' : row.message)}</td></tr>`).join('');
+    if (blank) throw new Error(`หน้าเว็บอ่านผลตรวจได้ ${entered.length} คน แต่ Apps Script แจ้งว่าว่าง กรุณาอัปเดต Code.gs และ Deploy เวอร์ชันใหม่`);
+    auditElement('Meta').textContent = errors ? `กรอก ${entered.length} คน · พบ ${errors} แถวที่ต้องแก้ไข ยังไม่มีการบันทึก` : write ? `บันทึก ${result.saved_count} รายการแล้ว` : ready ? `พร้อมบันทึก ${ready} รายการ · ข้ามแถวที่ยังไม่ได้กรอก ${termAuditRows.length - entered.length} แถว` : `ผลตรวจ ${entered.length} คนบันทึกไว้แล้ว ไม่มีข้อมูลใหม่ให้บันทึก`;
+    auditElement('Save').disabled = write || errors > 0 || !ready;
   } catch (error) { auditElement('Meta').textContent = error.message; }
   finally { auditElement('File').disabled = false; auditElement('Validate').disabled = false; }
 }
