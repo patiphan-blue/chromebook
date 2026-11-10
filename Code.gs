@@ -1516,6 +1516,19 @@ function listUnborrowedStudentsByGrade(data) {
   };
 }
 
+function getAuditBorrowerId(row) {
+  return getTransactionBorrowerType(row) === 'teacher'
+    ? 'teacher:' + String(row.teacher_id || row.borrower_id || '')
+    : String(row.student_id || row.borrower_id || '').trim();
+}
+
+function getAuditPeople(grade) {
+  if (grade !== 'ครู') return getRows(SHEETS.STUDENTS);
+  return getRows(SHEETS.TEACHERS).map((row) => Object.assign({}, row, {
+    student_id: 'teacher:' + String(row.teacher_id), grade_level: 'ครู',
+  }));
+}
+
 function listAnnualStudentDeviceAudit(data) {
   const gradePrefix = required(data.grade_prefix, 'ระดับชั้น');
   const year = String(data.academic_year || '').trim();
@@ -1531,13 +1544,13 @@ function listAnnualStudentDeviceAudit(data) {
   const activeLoanByStudentId = {};
 
   inventory.transactions.forEach((row) => {
-    if (!isBorrowingStatus(row.status) || getTransactionBorrowerType(row) !== 'student') return;
-    const studentId = String(row.student_id || row.borrower_id || '').trim();
+    if (!isBorrowingStatus(row.status) || getTransactionBorrowerType(row) !== (gradePrefix === 'ครู' ? 'teacher' : 'student')) return;
+    const studentId = getAuditBorrowerId(row);
     if (studentId) activeLoanByStudentId[studentId] = row;
   });
 
   const grouped = {};
-  getRows(SHEETS.STUDENTS)
+  getAuditPeople(gradePrefix)
     .filter((student) => getGradePrefix(student.grade_level) === gradePrefix)
     .sort((a, b) => {
       const classCompare = naturalClassSort(a.grade_level, b.grade_level);
@@ -1613,9 +1626,9 @@ function listTermAuditProgress(data) {
   if (!/^25\d{2}$/.test(year) || !['1', '2'].includes(term)) throw new Error('กรุณาเลือกปีการศึกษาและเทอม');
   const grade = String(data.grade_prefix || '').trim();
   const latest = indexBy(getRows('TermAudits').filter((row) => String(row.academic_year) === year && String(row.term) === term), 'student_id');
-  const active = indexBy(getRows(SHEETS.TRANSACTIONS).filter((row) => isBorrowingStatus(row.status) && getTransactionBorrowerType(row) === 'student').map((row) => Object.assign({}, row, { student_id: String(row.student_id || row.borrower_id) })), 'student_id');
+  const active = indexBy(getRows(SHEETS.TRANSACTIONS).filter((row) => isBorrowingStatus(row.status) && getTransactionBorrowerType(row) === (grade === 'ครู' ? 'teacher' : 'student')).map((row) => Object.assign({}, row, { student_id: getAuditBorrowerId(row) })), 'student_id');
   const devices = indexBy(getRows(SHEETS.CHROMEBOOKS), 'device_key');
-  const students = Array.from(new Map(getRows(SHEETS.STUDENTS).filter((row) => row.student_id && (!grade || getGradePrefix(row.grade_level) === grade)).map((row) => [String(row.student_id), row])).values());
+  const students = Array.from(new Map(getAuditPeople(grade).filter((row) => row.student_id && (!grade || getGradePrefix(row.grade_level) === grade)).map((row) => [String(row.student_id), row])).values());
   const rows = students.sort((a, b) => naturalClassSort(a.grade_level, b.grade_level) || compareStudentsById(a, b)).map((student) => {
     const id = String(student.student_id), check = latest[id], loan = active[id];
     const current = check && (loan ? String(check.transaction_id) === String(loan.transaction_id) && String(check.device_key) === String(loan.device_key) : !check.transaction_id && check.device_result === 'ไม่ได้ยืม');
@@ -1643,7 +1656,7 @@ function importTermAudit(data) {
 function processTermAudit(data, write) {
   const adminId = requireRepairAdmin(data);
   if (!Array.isArray(data.rows) || !data.rows.length || data.rows.length > 2000) throw new Error('รองรับไฟล์ 1–2000 แถวต่อครั้ง');
-  const students = indexBy(getRows(SHEETS.STUDENTS), 'student_id');
+  const students = indexBy(getRows(SHEETS.STUDENTS).concat(getAuditPeople('ครู')), 'student_id');
   const devices = indexBy(getRows(SHEETS.CHROMEBOOKS), 'device_key');
   const transactions = getRows(SHEETS.TRANSACTIONS);
   const txById = indexBy(transactions, 'transaction_id');
@@ -1670,9 +1683,9 @@ function processTermAudit(data, write) {
     else if (!['พบเครื่อง-ปกติ', 'พบเครื่อง-ชำรุด', 'ไม่พบเครื่อง', 'ไม่ได้ยืม'].includes(row.device_result)) error = 'ผลตรวจเครื่องไม่ถูกต้อง';
     else if (row.note.length > 2000) error = 'หมายเหตุยาวเกิน 2000 ตัวอักษร';
     else if (row.device_result === 'ไม่ได้ยืม') {
-      if (row.device_key || row.transaction_id || row.asset_no || transactions.some((item) => isBorrowingStatus(item.status) && getTransactionBorrowerKey(item) === 'student:' + row.student_id)) error = 'นักเรียนมีรายการยืม กรุณาดาวน์โหลดไฟล์ใหม่';
+      if (row.device_key || row.transaction_id || row.asset_no || transactions.some((item) => isBorrowingStatus(item.status) && getAuditBorrowerId(item) === row.student_id)) error = 'ผู้ยืมมีรายการยืม กรุณาดาวน์โหลดไฟล์ใหม่';
       else if (['pen', 'pen_charger', 'charger'].some((key) => row[key] && row[key] !== 'ยังไม่ได้ตรวจ')) error = 'ผู้ไม่ได้ยืมไม่ต้องกรอกผลตรวจอุปกรณ์';
-    } else if (!tx || !isBorrowingStatus(tx.status) || getTransactionBorrowerKey(tx) !== 'student:' + row.student_id || String(tx.device_key) !== row.device_key || !device || String(device.asset_no || '') !== row.asset_no) error = 'เครื่องหรือผู้ยืมเปลี่ยนแล้ว กรุณาดาวน์โหลดไฟล์ใหม่';
+    } else if (!tx || !isBorrowingStatus(tx.status) || getAuditBorrowerId(tx) !== row.student_id || String(tx.device_key) !== row.device_key || !device || String(device.asset_no || '') !== row.asset_no) error = 'เครื่องหรือผู้ยืมเปลี่ยนแล้ว กรุณาดาวน์โหลดไฟล์ใหม่';
     else if (['pen', 'pen_charger', 'charger'].some((key) => !['ครบ', 'ขาด', 'ชำรุด', 'ยังไม่ได้ตรวจ'].includes(row[key]))) error = 'กรุณาระบุผลตรวจอุปกรณ์ทั้ง 3 ชิ้น';
     row.audit_key = JSON.stringify([row.academic_year, row.term, row.student_id]);
     if (!error && seen.has(row.audit_key)) error = 'นักเรียนซ้ำในปีและเทอมเดียวกันภายในไฟล์';

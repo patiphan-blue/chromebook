@@ -15,7 +15,7 @@ async function loadTermAuditGrades() {
   if (select.options.length > 1) return;
   try {
     const groups = await api('listGradeGroups');
-    select.innerHTML = '<option value="">เลือกระดับชั้น</option>' + groups.map((row) => `<option value="${escapeAttr(row.grade_prefix)}">${escapeHtml(row.grade_prefix)}</option>`).join('');
+    select.innerHTML = '<option value="">เลือกระดับชั้น / ครู</option><option value="ครู">ครู</option>' + groups.map((row) => `<option value="${escapeAttr(row.grade_prefix)}">${escapeHtml(row.grade_prefix)}</option>`).join('');
   } catch (error) { auditElement('Meta').textContent = error.message; }
 }
 
@@ -36,6 +36,7 @@ function makeTermAuditWorkbook(report, year, term) {
   });
   const instructions = XLSX.utils.aoa_to_sheet([
     ['คำแนะนำการตรวจประจำเทอม'],
+    ['ไฟล์ครูใช้คอลัมน์รหัสนักเรียนเก็บรหัสผู้ยืมครูที่ระบบกำหนด ห้ามแก้รหัสหรือหัวตาราง'],
     ['ผลตรวจเดิมของปีและเทอมที่เลือกเติมให้แล้ว อัปโหลดข้อมูลเดิมซ้ำจะถูกข้าม'],
     ['สถานะ ต้องตรวจใหม่ หมายถึงรายการยืมเปลี่ยน ช่องผลตรวจจะเว้นว่างเพื่อให้ตรวจเครื่องปัจจุบัน'],
     ['กรอกเฉพาะวันที่ตรวจ ผู้ตรวจ ผลตรวจเครื่อง อุปกรณ์ และหมายเหตุ เก็บรหัสเดิมไว้'],
